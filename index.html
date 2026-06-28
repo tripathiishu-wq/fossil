@@ -100,9 +100,14 @@
   <p class="lede">Speed to Proficiency. Sign in to your trainer workspace — your teams and assessments are private to you.</p>
   <label>Email</label><input type="email" id="authEmail" placeholder="you@company.com" autocomplete="username">
   <label style="margin-top:12px">Password</label><input type="password" id="authPass" placeholder="••••••••" autocomplete="current-password">
+  <div id="orgField" style="display:none">
+    <label style="margin-top:12px">Organisation</label>
+    <input type="text" id="authOrg" placeholder="Your company name">
+    <p class="help">New here? We'll create this workspace. Already exists? You'll join it.</p>
+  </div>
   <div class="btnrow" style="margin-top:16px">
     <button class="btn" id="btnSignIn" onclick="signIn()">Sign in</button>
-    <button class="btn alt" id="btnSignUp" onclick="signUp()">Create account</button>
+    <button class="btn alt" id="btnSignUp" onclick="toggleSignUp()">Create account</button>
   </div>
   <div class="msg" id="authMsg"></div>
   <p class="help" id="authConfig" style="margin-top:18px"></p>
@@ -117,8 +122,9 @@
     <button data-v="assess">Assess</button>
     <button data-v="reports">Reports</button>
     <button data-v="connect">Connections</button>
+    <button data-v="platform" id="navPlatform" style="display:none;color:var(--signal);opacity:1">Platform</button>
   </div>
-  <div class="who"><span id="whoEmail"></span><button onclick="signOut()">Sign out</button></div>
+  <div class="who"><span id="whoOrg" class="tag" style="margin-right:8px"></span><span id="whoEmail"></span><button onclick="signOut()">Sign out</button></div>
 </div>
 
 <div id="appBody" style="display:none">
@@ -184,6 +190,14 @@
   <div class="btnrow"><button class="btn sig" onclick="openConnect()">+ Add connection</button></div>
   <div id="connList"></div>
 </div></div>
+
+<!-- PLATFORM (owner only) -->
+<div class="view" id="v-platform"><div class="wrap">
+  <h1>Platform</h1><p class="lede">Aggregate view across every organisation on RampIQ — your metrics for investors.</p>
+  <div class="grid" id="platStats"></div>
+  <div class="panel"><h2>Organisations</h2><div id="platOrgs"></div></div>
+  <p class="help">Visible only to the platform owner account.</p>
+</div></div>
 </div>
 
 <!-- CREATE TEAM MODAL -->
@@ -201,6 +215,12 @@
     <div class="chk"><input type="checkbox" id="f_start"><span>Start date</span></div>
     <div class="chk"><input type="checkbox" id="f_role"><span>Role / title</span></div>
     <div class="chk"><input type="checkbox" id="f_mgr"><span>Manager</span></div>
+  </div>
+  <div id="manualMembers" style="margin-top:14px;display:none">
+    <label>Members</label>
+    <p class="help" style="margin-top:0">Add trainees by name (and ID if you have it). You can also add more later.</p>
+    <div id="memberRows"></div>
+    <button class="btn alt sm" style="margin-top:8px" onclick="addMemberRow()">+ Add member</button>
   </div>
   <div class="btnrow" style="margin-top:18px"><button class="btn sig" id="btnCreate" onclick="createTeam()">Create</button>
     <button class="btn alt" onclick="closeCreate()">Cancel</button></div>
@@ -256,6 +276,11 @@ const bandColorHex={Proficient:"#2f6b4f",Developing:"#c8901f",Lagging:"#b33a2e"}
 
 // in-memory caches loaded from Supabase
 let TEAMS=[], MEMBERS=[], ASSESS=[], CONNS=[];
+let CUR_ORG=null;          // {id,name} the user's active organisation
+let signupMode=false;
+
+// Set this to YOUR platform-owner email to unlock the Platform tab.
+const PLATFORM_OWNER = "tripathi.ishu@gmail.com";
 
 /* ============ AUTH ============ */
 function initSupabase(){
@@ -270,6 +295,13 @@ function initSupabase(){
   sb.auth.getSession().then(({data})=>{ if(data.session){session=data.session;onAuthed();}});
 }
 function authMsg(t,ok){const e=document.getElementById('authMsg');e.textContent=t;e.className='msg '+(ok?'ok':'err');}
+// First click reveals the org field; second click (now in signup mode) creates.
+function toggleSignUp(){
+  if(!signupMode){signupMode=true;document.getElementById('orgField').style.display='block';
+    document.getElementById('btnSignUp').textContent='Create account & workspace';
+    authMsg('Enter your organisation, then create your account.',true);return;}
+  signUp();
+}
 async function signIn(){
   const email=authEmail.value.trim(),password=authPass.value;
   const {data,error}=await sb.auth.signInWithPassword({email,password});
@@ -277,21 +309,47 @@ async function signIn(){
   session=data.session;onAuthed();
 }
 async function signUp(){
-  const email=authEmail.value.trim(),password=authPass.value;
+  const email=authEmail.value.trim(),password=authPass.value,org=document.getElementById('authOrg').value.trim();
+  if(!org)return authMsg('Enter your organisation name.');
   const {data,error}=await sb.auth.signUp({email,password});
   if(error)return authMsg(error.message);
-  if(data.session){session=data.session;onAuthed();}
-  else authMsg("Account created. Check your email to confirm, then sign in.",true);
+  if(data.session){session=data.session;await ensureOrg(org);onAuthed();}
+  else authMsg("Account created. Confirm via email, then sign in — your workspace '"+org+"' will be set up on first login.",true);
 }
 async function signOut(){await sb.auth.signOut();location.reload();}
+
+// Find an org by name or create it; ensure the user is a member.
+async function ensureOrg(name){
+  // already a member of something?
+  let {data:mine}=await sb.from('org_members').select('org_id,organizations(id,name)').limit(1);
+  if(mine&&mine.length){CUR_ORG={id:mine[0].organizations.id,name:mine[0].organizations.name};return;}
+  // try to find an existing org with this name (may be blocked by RLS if not a member; that's fine)
+  let {data:found}=await sb.from('organizations').select('*').eq('name',name).limit(1);
+  let org=found&&found[0];
+  if(!org){
+    const {data:created,error}=await sb.from('organizations').insert({name,created_by:session.user.id}).select().single();
+    if(error){console.warn(error);return;}
+    org=created;
+    await sb.from('org_members').insert({org_id:org.id,user_id:session.user.id,role:'admin'});
+  }else{
+    await sb.from('org_members').insert({org_id:org.id,user_id:session.user.id,role:'trainer'});
+  }
+  CUR_ORG={id:org.id,name:org.name};
+}
+
 function onAuthed(){
   document.getElementById('auth').style.display='none';
   document.getElementById('shell').style.display='flex';
   document.getElementById('appBody').style.display='block';
   document.getElementById('whoEmail').textContent=session.user.email;
+  if(session.user.email===PLATFORM_OWNER) document.getElementById('navPlatform').style.display='inline-block';
   loadAll();
 }
 async function loadAll(){
+  // resolve current org membership
+  const {data:mem}=await sb.from('org_members').select('org_id,organizations(id,name)').limit(1);
+  if(mem&&mem.length){CUR_ORG={id:mem[0].organizations.id,name:mem[0].organizations.name};
+    document.getElementById('whoOrg').textContent=CUR_ORG.name;}
   const [t,m,a,c]=await Promise.all([
     sb.from('teams').select('*').order('created_at'),
     sb.from('members').select('*'),
@@ -311,7 +369,7 @@ function show(v){
   document.getElementById('v-'+v).classList.add('on');
   if(v==='dash')renderDash();if(v==='teams')renderTeams();
   if(v==='reports')renderReports();if(v==='assess')renderTeamSelect();
-  if(v==='connect')renderConns();
+  if(v==='connect')renderConns();if(v==='platform')renderPlatform();
   window.scrollTo(0,0);
 }
 
@@ -357,7 +415,7 @@ async function run(){
   const r=score(ms,q);
   const name=tname.value.trim()||"Unnamed trainee",coh=cohort.value.trim();
   renderResult(name,coh,ms,r);
-  const rec={owner_id:session.user.id,team_id:aTeam.value||null,member_id:aMember.value||null,
+  const rec={owner_id:session.user.id,org_id:CUR_ORG?CUR_ORG.id:null,team_id:aTeam.value||null,member_id:aMember.value||null,
     name,cohort:coh,milestones:ms,quality:q,result:r};
   const {data,error}=await sb.from('assessments').insert(rec).select().single();
   if(error){alert("Save failed: "+error.message);return;}
@@ -418,6 +476,28 @@ function renderConns(){
     :'<div class="empty">No connections yet. Add one to pull rosters.</div>';
 }
 
+/* ============ PLATFORM (owner) ============ */
+async function renderPlatform(){
+  const stats=document.getElementById('platStats'),list=document.getElementById('platOrgs');
+  stats.innerHTML='<div class="stat"><div class="stat-n">…</div><div class="stat-l">loading</div></div>';
+  const {data,error}=await sb.from('platform_stats').select('*').order('created_at',{ascending:false});
+  if(error){list.innerHTML='<div class="empty">Platform view needs the org migration run in Supabase. ('+error.message+')</div>';stats.innerHTML='';return;}
+  const orgs=data||[];
+  const totTrainers=orgs.reduce((s,o)=>s+(+o.trainers||0),0);
+  const totAssess=orgs.reduce((s,o)=>s+(+o.assessments||0),0);
+  const avg=orgs.length?Math.round(orgs.reduce((s,o)=>s+(+o.avg_score||0),0)/orgs.filter(o=>o.avg_score).length||0):0;
+  stats.innerHTML=`
+    <div class="stat"><div class="stat-n">${orgs.length}</div><div class="stat-l">Organisations</div></div>
+    <div class="stat"><div class="stat-n">${totTrainers}</div><div class="stat-l">Trainers</div></div>
+    <div class="stat"><div class="stat-n">${totAssess}</div><div class="stat-l">Assessments</div></div>
+    <div class="stat"><div class="stat-n">${avg||'—'}</div><div class="stat-l">Avg score</div></div>`;
+  list.innerHTML=orgs.length?`<div style="overflow:auto"><table>
+    <thead><tr><th>Organisation</th><th>Trainers</th><th>Teams</th><th>Assessments</th><th>Avg</th><th>Joined</th></tr></thead>
+    <tbody>${orgs.map(o=>`<tr><td>${o.org_name}</td><td>${o.trainers}</td><td>${o.teams}</td>
+      <td>${o.assessments}</td><td>${o.avg_score||'—'}</td><td>${new Date(o.created_at).toLocaleDateString()}</td></tr>`).join('')}
+    </tbody></table></div>`:'<div class="empty">No organisations yet.</div>';
+}
+
 /* ============ TEAMS ============ */
 let pickedConn='manual';
 function openCreate(){
@@ -425,30 +505,52 @@ function openCreate(){
   document.getElementById('srcConn').innerHTML=CONNS.map(c=>`<div class="src" data-conn="${c.id}" onclick="pickConn(this)">
     <div class="src-ico">${c.kind==='workday'?'WD':'MCP'}</div><div><b>${c.kind==='workday'?'Workday':'MCP / HR'}</b>
     <div class="help">${c.base_url||''}</div></div></div>`).join('');
-  // default to first connection if any
   pickedConn='manual';
+  document.getElementById('memberRows').innerHTML='';
+  addMemberRow();addMemberRow();
+  reflectSource();
 }
 function closeCreate(){document.getElementById('createModal').classList.remove('on');}
 function tmsg(t,ok){const e=document.getElementById('createMsg');if(!t){e.className='msg';e.textContent='';return;}e.textContent=t;e.className='msg '+(ok?'ok':'err');}
-function pickConn(el){document.querySelectorAll('#createModal .src').forEach(s=>s.classList.remove('on'));el.classList.add('on');pickedConn=el.dataset.conn;}
+function pickConn(el){document.querySelectorAll('#createModal .src').forEach(s=>s.classList.remove('on'));el.classList.add('on');pickedConn=el.dataset.conn;reflectSource();}
+// show manual member entry only when source is Manual; show field picker only for connections
+function reflectSource(){
+  const manual=pickedConn==='manual';
+  document.getElementById('manualMembers').style.display=manual?'block':'none';
+  document.getElementById('fieldPick').style.display=manual?'none':'block';
+}
+function addMemberRow(){
+  const d=document.createElement('div');d.className='row';d.style.marginTop='8px';
+  d.innerHTML=`<div style="flex:2"><input type="text" class="mm-name" placeholder="Name"></div>
+    <div style="flex:1"><input type="text" class="mm-id" placeholder="ID (optional)"></div>`;
+  document.getElementById('memberRows').appendChild(d);
+}
 async function createTeam(){
   const name=newTeamName.value.trim();if(!name)return tmsg('Enter a team name.');
   const fields=['name','id'];[['f_start','start'],['f_role','role'],['f_mgr','mgr']].forEach(([id,k])=>{if(document.getElementById(id).checked)fields.push(k);});
   const btn=document.getElementById('btnCreate');btn.disabled=true;
   const src=pickedConn==='manual'?'manual':(CONNS.find(c=>c.id===pickedConn)?.kind||'manual');
-  // create team row
-  const {data:team,error}=await sb.from('teams').insert({owner_id:session.user.id,name,source:src,fields}).select().single();
+  const orgId=CUR_ORG?CUR_ORG.id:null;
+  const {data:team,error}=await sb.from('teams').insert({owner_id:session.user.id,org_id:orgId,name,source:src,fields}).select().single();
   if(error){tmsg('Create failed: '+error.message);btn.disabled=false;return;}
   TEAMS.push(team);
-  // pull roster if a real connection
-  if(pickedConn!=='manual'){
+
+  if(pickedConn==='manual'){
+    // gather typed member rows
+    const rows=[...document.querySelectorAll('#memberRows .row')].map(r=>({
+      name:r.querySelector('.mm-name').value.trim(),
+      emp_id:r.querySelector('.mm-id').value.trim()||null,
+    })).filter(m=>m.name).map(m=>({owner_id:session.user.id,org_id:orgId,team_id:team.id,name:m.name,emp_id:m.emp_id}));
+    if(rows.length){const {data:ins,error:e2}=await sb.from('members').insert(rows).select();
+      if(e2){tmsg('Team made, member save failed: '+e2.message);} else MEMBERS.push(...(ins||[]));}
+  }else{
     tmsg('Pulling roster…',true);
     try{
       const res=await fetch('/api/hr',{method:'POST',headers:{'Content-Type':'application/json',Authorization:await authHeader()},
         body:JSON.stringify({action:'roster',connection_id:pickedConn,fields})});
       const d=await res.json();
       if(!res.ok)throw new Error(d.error||'Roster pull failed');
-      const rows=(d.members||[]).map(m=>({owner_id:session.user.id,team_id:team.id,
+      const rows=(d.members||[]).map(m=>({owner_id:session.user.id,org_id:orgId,team_id:team.id,
         name:m.name,emp_id:m.emp_id,start_week:m.start_week,role:m.role,manager:m.manager}));
       if(rows.length){const {data:ins}=await sb.from('members').insert(rows).select();MEMBERS.push(...(ins||[]));}
     }catch(e){tmsg('Team made, but roster pull failed: '+e.message);btn.disabled=false;setTimeout(()=>{closeCreate();show('teams');},1400);return;}
