@@ -5,58 +5,52 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>RampIQ — Speed to Proficiency</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <style>
   :root{
     --ink:#13261f; --paper:#f0ece1; --paper2:#e6e0d1; --card:#fbf9f3;
     --line:#c4bca5; --signal:#d4602a; --green:#2f6b4f; --amber:#c8901f; --red:#b33a2e;
-    --muted:#5a6b62; --ink2:#1c3a2e;
+    --muted:#5a6b62;
     --disp:"Georgia","Times New Roman",serif;
     --body:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
     --mono:"SF Mono",ui-monospace,"Roboto Mono",monospace;
   }
   *{box-sizing:border-box;-webkit-tap-highlight-color:transparent;}
   body{margin:0;background:var(--paper);color:var(--ink);font-family:var(--body);line-height:1.45;}
-  a{color:inherit;}
-  /* shell */
   .topbar{position:sticky;top:0;z-index:30;background:var(--ink);color:var(--paper);
-    display:flex;align-items:center;gap:18px;padding:0 18px;height:54px;}
-  .brand{font-family:var(--disp);font-weight:700;font-size:19px;letter-spacing:-.01em;}
-  .brand span{color:var(--signal);}
-  .nav{display:flex;gap:4px;margin-left:8px;flex:1;overflow-x:auto;}
+    display:flex;align-items:center;gap:14px;padding:0 16px;height:54px;}
+  .brand{font-family:var(--disp);font-weight:700;font-size:19px;}.brand span{color:var(--signal);}
+  .nav{display:flex;gap:2px;margin-left:6px;flex:1;overflow-x:auto;}
   .nav button{background:none;border:none;color:var(--paper);opacity:.6;font-family:var(--mono);
-    font-size:11px;letter-spacing:.12em;text-transform:uppercase;padding:8px 11px;cursor:pointer;
-    border-radius:4px;white-space:nowrap;}
+    font-size:11px;letter-spacing:.1em;text-transform:uppercase;padding:8px 10px;cursor:pointer;border-radius:4px;white-space:nowrap;}
   .nav button.on{opacity:1;background:rgba(255,255,255,.1);}
+  .who{font-family:var(--mono);font-size:11px;opacity:.8;display:flex;align-items:center;gap:8px;}
+  .who button{background:none;border:1px solid rgba(255,255,255,.3);color:var(--paper);font-size:10px;
+    padding:4px 8px;border-radius:4px;cursor:pointer;font-family:var(--mono);}
   .wrap{max-width:880px;margin:0 auto;padding:22px 18px 80px;}
-  .view{display:none;} .view.on{display:block;}
-  h1{font-family:var(--disp);font-weight:700;font-size:27px;line-height:1.08;margin:0 0 4px;letter-spacing:-.01em;}
+  .view{display:none;}.view.on{display:block;}
+  h1{font-family:var(--disp);font-weight:700;font-size:27px;margin:0 0 4px;letter-spacing:-.01em;}
   .lede{font-size:14px;color:var(--muted);font-style:italic;margin:0 0 18px;max-width:560px;}
   .panel{background:var(--paper2);border:1px solid var(--line);border-radius:5px;padding:16px;margin:14px 0;}
-  .panel h2{font-family:var(--mono);font-size:11px;letter-spacing:.18em;text-transform:uppercase;
-    color:var(--muted);margin:0 0 13px;font-weight:600;}
+  .panel h2{font-family:var(--mono);font-size:11px;letter-spacing:.18em;text-transform:uppercase;color:var(--muted);margin:0 0 13px;font-weight:600;}
   label{display:block;font-size:11px;font-weight:600;letter-spacing:.05em;margin:0 0 5px;text-transform:uppercase;color:var(--muted);}
-  input,select{width:100%;padding:10px 11px;border:1px solid var(--line);background:var(--card);
-    border-radius:3px;font-size:15px;font-family:var(--body);color:var(--ink);}
-  .row{display:flex;gap:12px;flex-wrap:wrap;}
-  .row>div{flex:1;min-width:130px;}
-  .btn{background:var(--ink);color:var(--paper);border:none;padding:13px 18px;font-family:var(--mono);
-    font-size:12px;letter-spacing:.14em;text-transform:uppercase;border-radius:4px;cursor:pointer;}
-  .btn:active{transform:translateY(1px);}
+  input,select{width:100%;padding:10px 11px;border:1px solid var(--line);background:var(--card);border-radius:3px;font-size:15px;font-family:var(--body);color:var(--ink);}
+  .row{display:flex;gap:12px;flex-wrap:wrap;}.row>div{flex:1;min-width:130px;}
+  .btn{background:var(--ink);color:var(--paper);border:none;padding:13px 18px;font-family:var(--mono);font-size:12px;letter-spacing:.14em;text-transform:uppercase;border-radius:4px;cursor:pointer;}
+  .btn:active{transform:translateY(1px);}.btn:disabled{opacity:.5;cursor:default;}
   .btn.alt{background:var(--card);color:var(--ink);border:1px solid var(--line);}
-  .btn.sig{background:var(--signal);}
-  .btn.sm{padding:8px 12px;font-size:11px;}
+  .btn.sig{background:var(--signal);}.btn.sm{padding:8px 12px;font-size:11px;}
   .btnrow{display:flex;gap:9px;flex-wrap:wrap;margin-top:10px;}
-  .mile{border-top:1px solid var(--line);padding:13px 0;} .mile:first-child{border-top:none;}
+  .mile{border-top:1px solid var(--line);padding:13px 0;}.mile:first-child{border-top:none;}
   .mile-head{display:flex;justify-content:space-between;align-items:baseline;gap:8px;}
   .mile-name{font-family:var(--disp);font-size:16px;font-weight:700;}
   .mile-bench{font-family:var(--mono);font-size:11px;color:var(--muted);}
   .mile-sub{font-size:12px;color:var(--muted);margin:2px 0 8px;}
-  /* result */
   .score-card{text-align:center;padding:24px 16px;border-radius:6px;color:#fff;margin:14px 0;}
   .score-who{font-family:var(--mono);font-size:12px;letter-spacing:.18em;text-transform:uppercase;opacity:.9;margin-bottom:10px;}
   .score-num{font-family:var(--disp);font-size:58px;line-height:1;font-weight:700;}
   .score-lab{font-family:var(--mono);font-size:12px;letter-spacing:.18em;text-transform:uppercase;margin-top:8px;opacity:.92;}
-  .score-tag{font-size:13.5px;margin-top:11px;max-width:430px;margin-left:auto;margin-right:auto;}
+  .score-tag{font-size:13.5px;margin-top:11px;max-width:430px;margin:11px auto 0;}
   .metric{display:flex;justify-content:space-between;align-items:center;padding:11px 0;border-top:1px solid var(--line);font-size:14px;}
   .metric:first-child{border-top:none;}
   .pill{font-family:var(--mono);font-size:10px;letter-spacing:.1em;text-transform:uppercase;padding:3px 9px;border-radius:20px;color:#fff;}
@@ -65,15 +59,11 @@
   .ramp-row{display:flex;align-items:center;gap:10px;font-size:13px;padding:6px 0;}
   .ramp-dot{width:11px;height:11px;border-radius:50%;flex:none;}
   .ramp-d{font-family:var(--mono);font-size:11px;color:var(--muted);width:70px;flex:none;text-align:right;}
-  /* tables */
   table{width:100%;border-collapse:collapse;font-size:13.5px;}
-  th{font-family:var(--mono);font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--muted);
-    text-align:left;padding:8px 10px;border-bottom:2px solid var(--line);}
+  th{font-family:var(--mono);font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--muted);text-align:left;padding:8px 10px;border-bottom:2px solid var(--line);}
   td{padding:10px;border-bottom:1px solid var(--line);}
-  tr.clk{cursor:pointer;} tr.clk:hover{background:var(--card);}
   .dot{display:inline-block;width:9px;height:9px;border-radius:50%;margin-right:6px;}
   .empty{text-align:center;color:var(--muted);font-style:italic;padding:30px 10px;font-size:14px;}
-  /* dashboard cards */
   .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;}
   .stat{background:var(--card);border:1px solid var(--line);border-radius:5px;padding:15px;}
   .stat-n{font-family:var(--disp);font-size:34px;font-weight:700;line-height:1;}
@@ -91,456 +81,472 @@
   .src-ico{width:34px;height:34px;border-radius:6px;background:var(--ink);color:var(--paper);display:flex;align-items:center;justify-content:center;font-family:var(--mono);font-size:11px;font-weight:700;flex:none;}
   .help{font-size:11px;color:var(--muted);font-style:italic;margin-top:5px;}
   .tag{font-family:var(--mono);font-size:10px;letter-spacing:.08em;text-transform:uppercase;color:var(--signal);}
-  .foot{font-size:11px;color:var(--muted);text-align:center;margin-top:26px;font-style:italic;}
+  .msg{font-size:12px;margin-top:8px;padding:9px 11px;border-radius:4px;display:none;}
+  .msg.err{display:block;background:#f6e3e0;color:var(--red);border:1px solid var(--red);}
+  .msg.ok{display:block;background:#e2efe7;color:var(--green);border:1px solid var(--green);}
+  /* auth screen */
+  #auth{position:fixed;inset:0;background:var(--paper);z-index:100;display:flex;align-items:center;justify-content:center;padding:18px;}
+  .authbox{max-width:380px;width:100%;}
+  .authbox .brand{font-size:30px;margin-bottom:4px;color:var(--ink);}
+  .authbox .lede{margin-bottom:22px;}
+  .spinner{display:none;}
 </style>
 </head>
 <body>
-<div class="topbar">
+
+<!-- ============ AUTH GATE ============ -->
+<div id="auth"><div class="authbox">
+  <div class="brand">Ramp<span style="color:var(--signal)">IQ</span></div>
+  <p class="lede">Speed to Proficiency. Sign in to your trainer workspace — your teams and assessments are private to you.</p>
+  <label>Email</label><input type="email" id="authEmail" placeholder="you@company.com" autocomplete="username">
+  <label style="margin-top:12px">Password</label><input type="password" id="authPass" placeholder="••••••••" autocomplete="current-password">
+  <div class="btnrow" style="margin-top:16px">
+    <button class="btn" id="btnSignIn" onclick="signIn()">Sign in</button>
+    <button class="btn alt" id="btnSignUp" onclick="signUp()">Create account</button>
+  </div>
+  <div class="msg" id="authMsg"></div>
+  <p class="help" id="authConfig" style="margin-top:18px"></p>
+</div></div>
+
+<!-- ============ SHELL ============ -->
+<div class="topbar" style="display:none" id="shell">
   <div class="brand">Ramp<span>IQ</span></div>
   <div class="nav">
     <button data-v="dash" class="on">Dashboard</button>
     <button data-v="teams">Teams</button>
     <button data-v="assess">Assess</button>
     <button data-v="reports">Reports</button>
+    <button data-v="connect">Connections</button>
   </div>
+  <div class="who"><span id="whoEmail"></span><button onclick="signOut()">Sign out</button></div>
 </div>
 
-<!-- ================= DASHBOARD ================= -->
+<div id="appBody" style="display:none">
+<!-- DASHBOARD -->
 <div class="view on" id="v-dash"><div class="wrap">
-  <h1>Overview</h1>
-  <p class="lede">Speed-to-proficiency across every team and trainee in your org.</p>
+  <h1>Overview</h1><p class="lede">Your teams and trainees — visible only to you.</p>
   <div class="grid" id="dashStats"></div>
-  <div class="panel">
-    <h2>Proficiency mix</h2>
-    <div class="seg" id="dashSeg"></div>
+  <div class="panel"><h2>Proficiency mix</h2><div class="seg" id="dashSeg"></div>
     <div style="display:flex;gap:16px;margin-top:9px;font-size:12px;flex-wrap:wrap">
       <span><span class="dot" style="background:var(--green)"></span>Proficient</span>
       <span><span class="dot" style="background:var(--amber)"></span>Developing</span>
       <span><span class="dot" style="background:var(--red)"></span>Lagging</span>
-      <span><span class="dot" style="background:var(--line)"></span>Not assessed</span>
-    </div>
-  </div>
-  <div class="panel">
-    <h2>Teams</h2>
-    <div id="dashTeams"></div>
-  </div>
+      <span><span class="dot" style="background:var(--line)"></span>Not assessed</span></div></div>
+  <div class="panel"><h2>Teams</h2><div id="dashTeams"></div></div>
 </div></div>
 
-<!-- ================= TEAMS ================= -->
+<!-- TEAMS -->
 <div class="view" id="v-teams"><div class="wrap">
-  <h1>Teams</h1>
-  <p class="lede">Pull a roster from Workday or another HR tool, or build one by hand.</p>
-  <div class="btnrow">
-    <button class="btn sig" onclick="openCreate()">+ Create team</button>
-  </div>
+  <h1>Teams</h1><p class="lede">Pull a roster from a connected HR source, or build one by hand.</p>
+  <div class="btnrow"><button class="btn sig" onclick="openCreate()">+ Create team</button></div>
   <div id="teamList"></div>
 </div></div>
 
-<!-- ================= ASSESS ================= -->
+<!-- ASSESS -->
 <div class="view" id="v-assess"><div class="wrap">
-  <h1>Assess</h1>
-  <p class="lede">Score a trainee against the ramp curve. Pick a roster member or enter manually.</p>
-
-  <div class="panel">
-    <h2>Trainee</h2>
+  <h1>Assess</h1><p class="lede">Score a trainee against the ramp curve.</p>
+  <div class="panel"><h2>Trainee</h2>
     <div class="row">
-      <div>
-        <label>Team</label>
-        <select id="aTeam" onchange="fillTeamMembers()"><option value="">— manual entry —</option></select>
-      </div>
-      <div>
-        <label>Roster member</label>
-        <select id="aMember" onchange="fillMember()"><option value="">— select —</option></select>
-      </div>
+      <div><label>Team</label><select id="aTeam" onchange="fillTeamMembers()"><option value="">— manual —</option></select></div>
+      <div><label>Roster member</label><select id="aMember" onchange="fillMember()"><option value="">— select —</option></select></div>
     </div>
     <div class="row" style="margin-top:12px">
       <div><label>Name / ID</label><input type="text" id="tname" placeholder="e.g. Priya M. · EMP-2381"></div>
       <div><label>Cohort start week</label><input type="text" id="cohort" placeholder="e.g. W12 2026"></div>
-    </div>
-  </div>
-
-  <div class="panel">
-    <h2>Ramp milestones — week reached</h2>
-    <p class="mile-sub" style="margin-top:-4px">Enter the actual week each milestone was hit. Blank = not yet reached.</p>
-    <div id="miles"></div>
-  </div>
-
-  <div class="panel">
-    <h2>Quality signals</h2>
+    </div></div>
+  <div class="panel"><h2>Ramp milestones — week reached</h2>
+    <p class="mile-sub" style="margin-top:-4px">Blank = not yet reached.</p><div id="miles"></div></div>
+  <div class="panel"><h2>Quality signals</h2>
     <div class="row">
-      <div><label>Win rate vs team avg</label><select id="winrate">
-        <option value="1">Below 60% of avg</option><option value="2">60–85%</option>
-        <option value="3" selected>85–100%</option><option value="4">At/above avg</option></select></div>
-      <div><label>Coach intervention</label><select id="coach">
-        <option value="1">Constant</option><option value="2">Frequent</option>
-        <option value="3" selected>Occasional</option><option value="4">Runs solo</option></select></div>
+      <div><label>Win rate vs avg</label><select id="winrate"><option value="1">Below 60%</option><option value="2">60–85%</option><option value="3" selected>85–100%</option><option value="4">At/above</option></select></div>
+      <div><label>Coach intervention</label><select id="coach"><option value="1">Constant</option><option value="2">Frequent</option><option value="3" selected>Occasional</option><option value="4">Runs solo</option></select></div>
     </div>
     <div class="row" style="margin-top:12px">
-      <div><label>Knowledge / certification</label><select id="cert">
-        <option value="1">Multiple gaps</option><option value="2">One gap</option>
-        <option value="3" selected>Passed, shaky</option><option value="4">Passed clean</option></select></div>
-      <div><label>Consistency (3 wks)</label><select id="consist">
-        <option value="1">Volatile</option><option value="2">Uneven</option>
-        <option value="3" selected>Steady upward</option><option value="4">Stable</option></select></div>
-    </div>
-  </div>
-
-  <div class="btnrow">
-    <button class="btn" onclick="run()">Assess</button>
-    <button class="btn alt" onclick="run(true)">Assess &amp; save to team</button>
-  </div>
+      <div><label>Certification</label><select id="cert"><option value="1">Multiple gaps</option><option value="2">One gap</option><option value="3" selected>Passed, shaky</option><option value="4">Passed clean</option></select></div>
+      <div><label>Consistency</label><select id="consist"><option value="1">Volatile</option><option value="2">Uneven</option><option value="3" selected>Steady</option><option value="4">Stable</option></select></div>
+    </div></div>
+  <div class="btnrow"><button class="btn" id="btnAssess" onclick="run()">Assess &amp; save</button></div>
   <div id="out"></div>
 </div></div>
 
-<!-- ================= REPORTS ================= -->
+<!-- REPORTS -->
 <div class="view" id="v-reports"><div class="wrap">
-  <h1>Reports</h1>
-  <p class="lede">Every saved assessment. Export the roster or open an individual report.</p>
+  <h1>Reports</h1><p class="lede">Your saved assessments.</p>
   <div class="btnrow">
     <button class="btn alt sm" onclick="exportRosterCSV()">Export all · CSV</button>
-    <button class="btn alt sm" onclick="exportRosterPDF()">Export all · PDF</button>
-  </div>
+    <button class="btn alt sm" onclick="exportRosterPDF()">Export all · PDF</button></div>
   <div class="panel"><div id="repTable"></div></div>
 </div></div>
 
-<!-- ============ CREATE TEAM MODAL ============ -->
+<!-- CONNECTIONS -->
+<div class="view" id="v-connect"><div class="wrap">
+  <h1>Connections</h1><p class="lede">Link Workday or another HR tool to pull rosters. Connections are private to your account.</p>
+  <div class="btnrow"><button class="btn sig" onclick="openConnect()">+ Add connection</button></div>
+  <div id="connList"></div>
+</div></div>
+</div>
+
+<!-- CREATE TEAM MODAL -->
 <div class="modal-bg" id="createModal"><div class="modal">
-  <h3>Create team</h3>
-  <p class="help" style="margin-top:0">Pull a roster from a connected HR source, or start empty.</p>
-  <label>Team name</label>
-  <input type="text" id="newTeamName" placeholder="e.g. APAC SDR — Spring Cohort">
-  <div style="margin-top:14px">
-    <label>Source</label>
-    <div class="src on" data-src="workday" onclick="pickSrc(this)">
-      <div class="src-ico">WD</div>
-      <div><b>Workday</b><div class="help">Pull roster via Workday connector</div></div>
-    </div>
-    <div class="src" data-src="mcp" onclick="pickSrc(this)">
-      <div class="src-ico">MCP</div>
-      <div><b>Other HR tool (MCP / link)</b><div class="help">BambooHR, SuccessFactors, custom endpoint</div></div>
-    </div>
-    <div class="src" data-src="manual" onclick="pickSrc(this)">
-      <div class="src-ico">+</div>
-      <div><b>Manual</b><div class="help">Add names &amp; IDs yourself</div></div>
-    </div>
+  <h3>Create team</h3><p class="help" style="margin-top:0">Pull from a connection, or start empty.</p>
+  <label>Team name</label><input type="text" id="newTeamName" placeholder="e.g. APAC SDR — Spring Cohort">
+  <div style="margin-top:14px"><label>Source</label>
+    <div id="srcConn"></div>
+    <div class="src" data-conn="manual" onclick="pickConn(this)"><div class="src-ico">+</div>
+      <div><b>Manual</b><div class="help">Add names &amp; IDs yourself</div></div></div>
   </div>
-  <div id="fieldPick" style="margin-top:14px">
-    <label>Fields to pull</label>
+  <div id="fieldPick" style="margin-top:14px"><label>Fields to pull</label>
     <div class="chk"><input type="checkbox" id="f_name" checked disabled><span>Name <span class="tag">required</span></span></div>
     <div class="chk"><input type="checkbox" id="f_id" checked disabled><span>Employee ID <span class="tag">required</span></span></div>
     <div class="chk"><input type="checkbox" id="f_start"><span>Start date</span></div>
     <div class="chk"><input type="checkbox" id="f_role"><span>Role / title</span></div>
     <div class="chk"><input type="checkbox" id="f_mgr"><span>Manager</span></div>
-    <div class="chk"><input type="checkbox" id="f_cert"><span>Certification records</span></div>
-    <div class="chk"><input type="checkbox" id="f_quota"><span>Quota / attainment history</span></div>
   </div>
-  <div class="btnrow" style="margin-top:18px">
-    <button class="btn sig" onclick="createTeam()">Create</button>
-    <button class="btn alt" onclick="closeCreate()">Cancel</button>
-  </div>
-  <div id="createMsg" class="help" style="margin-top:10px"></div>
+  <div class="btnrow" style="margin-top:18px"><button class="btn sig" id="btnCreate" onclick="createTeam()">Create</button>
+    <button class="btn alt" onclick="closeCreate()">Cancel</button></div>
+  <div class="msg" id="createMsg"></div>
 </div></div>
 
-<!-- ============ TEAM DETAIL MODAL ============ -->
+<!-- CONNECT MODAL -->
+<div class="modal-bg" id="connectModal"><div class="modal">
+  <h3>Add connection</h3>
+  <div style="margin-top:10px">
+    <div class="src on" data-kind="workday" onclick="pickKind(this)"><div class="src-ico">WD</div>
+      <div><b>Workday</b><div class="help">OAuth client-credentials</div></div></div>
+    <div class="src" data-kind="mcp" onclick="pickKind(this)"><div class="src-ico">MCP</div>
+      <div><b>Other HR tool (MCP)</b><div class="help">BambooHR, SuccessFactors, custom</div></div></div>
+  </div>
+  <div id="wdFields">
+    <label style="margin-top:8px">Workday base URL</label><input type="text" id="wd_base" placeholder="https://wd2-impl-services1.workday.com">
+    <div class="row" style="margin-top:10px">
+      <div><label>Tenant</label><input type="text" id="wd_tenant" placeholder="acme_preview"></div>
+      <div><label>Client ID</label><input type="text" id="wd_client" placeholder="OAuth client ID"></div>
+    </div>
+    <p class="help">Client <b>secret</b> is set once in Vercel env (WORKDAY_CLIENT_SECRET), never entered here or stored in the browser.</p>
+  </div>
+  <div id="mcpFields" style="display:none">
+    <label style="margin-top:8px">MCP server URL</label><input type="text" id="mcp_base" placeholder="https://your-mcp-host">
+    <p class="help">API key is set in Vercel env (MCP_API_KEY).</p>
+  </div>
+  <div class="btnrow" style="margin-top:16px"><button class="btn sig" id="btnConnect" onclick="saveConnection()">Connect &amp; verify</button>
+    <button class="btn alt" onclick="closeConnect()">Cancel</button></div>
+  <div class="msg" id="connectMsg"></div>
+</div></div>
+
+<!-- TEAM DETAIL MODAL -->
 <div class="modal-bg" id="teamModal"><div class="modal" id="teamModalBody"></div></div>
 
 <script>
-/* ---------------- data layer ---------------- */
+/* ============ CONFIG ============
+   Set these to your Supabase project (Settings → API). Safe to expose: the
+   anon key is public; RLS enforces per-user isolation server-side. */
+const SUPABASE_URL = window.RAMPIQ_SUPABASE_URL || "https://nyarczgvlmsbupwmkesn.supabase.co";
+const SUPABASE_ANON = window.RAMPIQ_SUPABASE_ANON || "sb_publishable_dJ2KJKrZwuZrxnzFbxrgvw_8wgg2x_A";
+const configured = !SUPABASE_URL.includes("YOUR-PROJECT") && !SUPABASE_ANON.includes("PASTE_FULL_KEY");
+let sb=null, session=null;
+
 const MILES=[
   {key:"onboard",name:"Onboarding complete",sub:"Tools, systems, product basics",bench:2},
-  {key:"shadow",name:"First shadowed call",sub:"Observes a live cycle end-to-end",bench:3},
+  {key:"shadow",name:"First shadowed call",sub:"Observes a live cycle",bench:3},
   {key:"firstpitch",name:"First solo pitch",sub:"Runs discovery unaided",bench:5},
   {key:"firstdeal",name:"First closed deal",sub:"Owns a deal to signature",bench:9},
   {key:"quota",name:"First quota-attainment month",sub:"Hits monthly target solo",bench:16},
 ];
-const DB={
-  teams: JSON.parse(localStorage.getItem('riq_teams')||'[]'),
-  assess: JSON.parse(localStorage.getItem('riq_assess')||'[]'),
-  save(){localStorage.setItem('riq_teams',JSON.stringify(this.teams));
-         localStorage.setItem('riq_assess',JSON.stringify(this.assess));}
-};
-const uid=()=>Math.random().toString(36).slice(2,9);
+const bandColorHex={Proficient:"#2f6b4f",Developing:"#c8901f",Lagging:"#b33a2e"};
 
-/* ---------------- nav ---------------- */
+// in-memory caches loaded from Supabase
+let TEAMS=[], MEMBERS=[], ASSESS=[], CONNS=[];
+
+/* ============ AUTH ============ */
+function initSupabase(){
+  if(!configured){
+    document.getElementById('authConfig').innerHTML=
+      "⚠ Not configured yet. Add your Supabase URL + anon key in index.html (CONFIG block), then redeploy.";
+    document.getElementById('btnSignIn').disabled=true;
+    document.getElementById('btnSignUp').disabled=true;
+    return;
+  }
+  sb=window.supabase.createClient(SUPABASE_URL,SUPABASE_ANON);
+  sb.auth.getSession().then(({data})=>{ if(data.session){session=data.session;onAuthed();}});
+}
+function authMsg(t,ok){const e=document.getElementById('authMsg');e.textContent=t;e.className='msg '+(ok?'ok':'err');}
+async function signIn(){
+  const email=authEmail.value.trim(),password=authPass.value;
+  const {data,error}=await sb.auth.signInWithPassword({email,password});
+  if(error)return authMsg(error.message);
+  session=data.session;onAuthed();
+}
+async function signUp(){
+  const email=authEmail.value.trim(),password=authPass.value;
+  const {data,error}=await sb.auth.signUp({email,password});
+  if(error)return authMsg(error.message);
+  if(data.session){session=data.session;onAuthed();}
+  else authMsg("Account created. Check your email to confirm, then sign in.",true);
+}
+async function signOut(){await sb.auth.signOut();location.reload();}
+function onAuthed(){
+  document.getElementById('auth').style.display='none';
+  document.getElementById('shell').style.display='flex';
+  document.getElementById('appBody').style.display='block';
+  document.getElementById('whoEmail').textContent=session.user.email;
+  loadAll();
+}
+async function loadAll(){
+  const [t,m,a,c]=await Promise.all([
+    sb.from('teams').select('*').order('created_at'),
+    sb.from('members').select('*'),
+    sb.from('assessments').select('*').order('created_at',{ascending:false}),
+    sb.from('hr_connections').select('*'),
+  ]);
+  TEAMS=t.data||[];MEMBERS=m.data||[];ASSESS=a.data||[];CONNS=c.data||[];
+  renderDash();
+}
+async function authHeader(){const {data}=await sb.auth.getSession();return 'Bearer '+data.session.access_token;}
+
+/* ============ NAV ============ */
 document.querySelectorAll('.nav button').forEach(b=>b.onclick=()=>show(b.dataset.v));
 function show(v){
   document.querySelectorAll('.nav button').forEach(b=>b.classList.toggle('on',b.dataset.v===v));
   document.querySelectorAll('.view').forEach(x=>x.classList.remove('on'));
   document.getElementById('v-'+v).classList.add('on');
-  if(v==='dash')renderDash(); if(v==='teams')renderTeams();
-  if(v==='reports')renderReports(); if(v==='assess')renderTeamSelect();
+  if(v==='dash')renderDash();if(v==='teams')renderTeams();
+  if(v==='reports')renderReports();if(v==='assess')renderTeamSelect();
+  if(v==='connect')renderConns();
   window.scrollTo(0,0);
 }
 
-/* ---------------- milestones UI ---------------- */
+/* ============ MILESTONES UI ============ */
 const milesEl=document.getElementById('miles');
 MILES.forEach(m=>{const d=document.createElement('div');d.className='mile';
   d.innerHTML=`<div class="mile-head"><span class="mile-name">${m.name}</span>
     <span class="mile-bench">bench · wk ${m.bench}</span></div>
-    <div class="mile-sub">${m.sub}</div>
-    <input type="number" min="1" id="m_${m.key}" placeholder="week reached">`;
+    <div class="mile-sub">${m.sub}</div><input type="number" min="1" id="m_${m.key}" placeholder="week reached">`;
   milesEl.appendChild(d);});
 
-/* ---------------- scoring ---------------- */
-function score(milestones,quality){
-  let vScores=[],reached=0,totalDelta=0,dc=0;
-  MILES.forEach(m=>{const v=milestones[m.key];
-    if(v&&v>0){reached++;totalDelta+=(m.bench-v);dc++;
-      let r=Math.max(0.4,Math.min(1.6,m.bench/v));vScores.push(((r-0.4)/1.2)*100);}});
-  const reachFactor=reached/MILES.length;
-  const velPace=vScores.length?vScores.reduce((a,b)=>a+b,0)/vScores.length:0;
-  const velocity=velPace*0.7+reachFactor*100*0.3;
-  const q=[quality.winrate,quality.coach,quality.cert,quality.consist];
-  const qual=(q.reduce((a,b)=>a+b,0)/16)*100;
-  const composite=Math.round(velocity*0.6+qual*0.4);
-  const avgDelta=dc?totalDelta/dc:0;
+/* ============ SCORING ============ */
+function score(ms,q){
+  let v=[],reached=0,td=0,dc=0;
+  MILES.forEach(m=>{const x=ms[m.key];if(x&&x>0){reached++;td+=(m.bench-x);dc++;
+    let r=Math.max(0.4,Math.min(1.6,m.bench/x));v.push(((r-0.4)/1.2)*100);}});
+  const rf=reached/MILES.length, vp=v.length?v.reduce((a,b)=>a+b,0)/v.length:0;
+  const velocity=vp*0.7+rf*100*0.3;
+  const qa=[q.winrate,q.coach,q.cert,q.consist],qual=(qa.reduce((a,b)=>a+b,0)/16)*100;
+  const composite=Math.round(velocity*0.6+qual*0.4),avgDelta=dc?td/dc:0;
   let band,col;
   if(composite>=78){band="Proficient";col="var(--green)";}
   else if(composite>=55){band="Developing";col="var(--amber)";}
   else{band="Lagging";col="var(--red)";}
   return{composite,velocity:Math.round(velocity),quality:Math.round(qual),reached,avgDelta,band,col};
 }
-const bandColorHex={Proficient:"#2f6b4f",Developing:"#c8901f",Lagging:"#b33a2e"};
 
-/* ---------------- assess view ---------------- */
+/* ============ ASSESS ============ */
 function renderTeamSelect(){
-  const s=document.getElementById('aTeam');
-  s.innerHTML='<option value="">— manual entry —</option>'+
-    DB.teams.map(t=>`<option value="${t.id}">${t.name}</option>`).join('');
+  aTeam.innerHTML='<option value="">— manual —</option>'+TEAMS.map(t=>`<option value="${t.id}">${t.name}</option>`).join('');
 }
 function fillTeamMembers(){
-  const t=DB.teams.find(x=>x.id===document.getElementById('aTeam').value);
-  const s=document.getElementById('aMember');
-  s.innerHTML='<option value="">— select —</option>'+
-    (t?t.members.map(m=>`<option value="${m.id}">${m.name} · ${m.empId}</option>`).join(''):'');
+  const list=MEMBERS.filter(m=>m.team_id===aTeam.value);
+  aMember.innerHTML='<option value="">— select —</option>'+list.map(m=>`<option value="${m.id}">${m.name} · ${m.emp_id||''}</option>`).join('');
 }
 function fillMember(){
-  const t=DB.teams.find(x=>x.id===document.getElementById('aTeam').value);
-  if(!t)return; const m=t.members.find(x=>x.id===document.getElementById('aMember').value);
-  if(m){document.getElementById('tname').value=`${m.name} · ${m.empId}`;
-        if(m.start)document.getElementById('cohort').value=m.start;}
+  const m=MEMBERS.find(x=>x.id===aMember.value);
+  if(m){tname.value=`${m.name}${m.emp_id?' · '+m.emp_id:''}`;if(m.start_week)cohort.value=m.start_week;}
 }
-
-function run(saveToTeam){
-  const ms={}; MILES.forEach(m=>{const v=parseFloat(document.getElementById('m_'+m.key).value);ms[m.key]=isNaN(v)?0:v;});
+async function run(){
+  const ms={};MILES.forEach(m=>{const v=parseFloat(document.getElementById('m_'+m.key).value);ms[m.key]=isNaN(v)?0:v;});
   const q={winrate:+winrate.value,coach:+coach.value,cert:+cert.value,consist:+consist.value};
   const r=score(ms,q);
-  const name=document.getElementById('tname').value.trim()||"Unnamed trainee";
-  const cohort=document.getElementById('cohort').value.trim();
-  renderResult(name,cohort,ms,r);
-
-  // persist
-  const rec={id:uid(),name,cohort,milestones:ms,quality:q,result:r,
-    teamId:document.getElementById('aTeam').value||null,date:new Date().toISOString()};
-  DB.assess=DB.assess.filter(a=>!(a.name===name&&a.teamId===rec.teamId)); // dedupe latest per person
-  DB.assess.push(rec); DB.save();
-  if(saveToTeam){
-    const tid=document.getElementById('aTeam').value;
-    if(!tid){alert("Pick a team first to save into it.");}
-  }
+  const name=tname.value.trim()||"Unnamed trainee",coh=cohort.value.trim();
+  renderResult(name,coh,ms,r);
+  const rec={owner_id:session.user.id,team_id:aTeam.value||null,member_id:aMember.value||null,
+    name,cohort:coh,milestones:ms,quality:q,result:r};
+  const {data,error}=await sb.from('assessments').insert(rec).select().single();
+  if(error){alert("Save failed: "+error.message);return;}
+  ASSESS.unshift(data);
 }
-
 function renderResult(name,cohort,ms,r){
-  const pace=r.avgDelta>0.5?`${r.avgDelta.toFixed(1)} wks ahead of benchmark`
-    :r.avgDelta<-0.5?`${Math.abs(r.avgDelta).toFixed(1)} wks behind benchmark`:"on benchmark pace";
+  const pace=r.avgDelta>0.5?`${r.avgDelta.toFixed(1)} wks ahead`:r.avgDelta<-0.5?`${Math.abs(r.avgDelta).toFixed(1)} wks behind`:"on pace";
   const tag=r.band==="Proficient"?"At or ahead of pace with strong quality. Ready to run independently."
     :r.band==="Developing"?"Progressing on curve. Close gaps and reassess in 2–3 weeks."
-    :"Behind pace or quality is soft. Build a targeted ramp plan before added autonomy.";
+    :"Behind pace or quality is soft. Build a targeted ramp plan first.";
   const bar=(v,c)=>`<div class="bar-track"><div class="bar-fill" style="width:${Math.round(v)}%;background:${c}"></div></div>`;
-  let ramp='';
-  MILES.forEach(m=>{const v=ms[m.key];let dot,txt;
+  let ramp='';MILES.forEach(m=>{const v=ms[m.key];let dot,txt;
     if(!v){dot="var(--line)";txt=`— · bench ${m.bench}`;}
     else if(v<=m.bench){dot="var(--green)";txt=`wk ${v} · ${m.bench-v>0?(m.bench-v)+' early':'on time'}`;}
     else if(v<=m.bench*1.25){dot="var(--amber)";txt=`wk ${v} · ${v-m.bench} late`;}
     else{dot="var(--red)";txt=`wk ${v} · ${v-m.bench} late`;}
-    ramp+=`<div class="ramp-row"><span class="ramp-dot" style="background:${dot}"></span>
-      <span style="flex:1">${m.name}</span><span class="ramp-d">${txt}</span></div>`;});
-  document.getElementById('out').innerHTML=`
-    <div class="score-card" style="background:${r.col}">
-      <div class="score-who">${name}${cohort?' · '+cohort:''}</div>
-      <div class="score-num">${r.composite}</div>
-      <div class="score-lab">${r.band} · ${pace}</div>
-      <div class="score-tag">${tag}</div>
-    </div>
-    <div class="panel">
-      <h2>${name}</h2>
+    ramp+=`<div class="ramp-row"><span class="ramp-dot" style="background:${dot}"></span><span style="flex:1">${m.name}</span><span class="ramp-d">${txt}</span></div>`;});
+  out.innerHTML=`<div class="score-card" style="background:${r.col}">
+    <div class="score-who">${name}${cohort?' · '+cohort:''}</div>
+    <div class="score-num">${r.composite}</div><div class="score-lab">${r.band} · ${pace}</div>
+    <div class="score-tag">${tag}</div></div>
+    <div class="panel"><h2>${name}</h2>
       <div class="metric"><span>Ramp velocity <b>(60%)</b></span><span>${r.velocity}/100</span></div>${bar(r.velocity,'var(--signal)')}
       <div class="metric" style="margin-top:13px"><span>Quality signals <b>(40%)</b></span><span>${r.quality}/100</span></div>${bar(r.quality,'var(--ink)')}
-      <div class="metric" style="margin-top:13px"><span>Milestones reached</span>
-        <span class="pill" style="background:${r.col}">${r.reached} / ${MILES.length}</span></div>
-    </div>
-    <div class="panel"><h2>Milestone ramp</h2>${ramp}</div>
-    <div class="btnrow">
-      <button class="btn alt sm" onclick="exportOneCSV('${encodeURIComponent(name)}')">Export · CSV</button>
-      <button class="btn alt sm" onclick="exportOnePDF('${encodeURIComponent(name)}')">Export · PDF</button>
-    </div>`;
-  document.getElementById('out').scrollIntoView({behavior:'smooth',block:'start'});
+      <div class="metric" style="margin-top:13px"><span>Milestones reached</span><span class="pill" style="background:${r.col}">${r.reached} / ${MILES.length}</span></div></div>
+    <div class="panel"><h2>Milestone ramp</h2>${ramp}</div>`;
+  out.scrollIntoView({behavior:'smooth',block:'start'});
 }
 
-/* ---------------- teams ---------------- */
-let curSrc='workday';
-function openCreate(){document.getElementById('createModal').classList.add('on');document.getElementById('createMsg').textContent='';}
-function closeCreate(){document.getElementById('createModal').classList.remove('on');}
-function pickSrc(el){document.querySelectorAll('.src').forEach(s=>s.classList.remove('on'));el.classList.add('on');curSrc=el.dataset.src;}
-
-async function createTeam(){
-  const name=document.getElementById('newTeamName').value.trim();
-  if(!name){document.getElementById('createMsg').textContent='Enter a team name.';return;}
-  const fields=['name','id'];
-  [['f_start','start'],['f_role','role'],['f_mgr','mgr'],['f_cert','cert'],['f_quota','quota']]
-    .forEach(([id,k])=>{if(document.getElementById(id).checked)fields.push(k);});
-  let members=[];
-  if(curSrc==='manual'){members=[];}
-  else{
-    document.getElementById('createMsg').textContent='Pulling roster from '+curSrc+'…';
-    members=await pullRoster(curSrc,fields);
-  }
-  DB.teams.push({id:uid(),name,source:curSrc,fields,members,created:new Date().toISOString()});
-  DB.save(); closeCreate(); show('teams');
-}
-
-// Calls serverless stub; falls back to mock so the demo works offline.
-async function pullRoster(source,fields){
+/* ============ CONNECTIONS ============ */
+let connKind='workday';
+function openConnect(){document.getElementById('connectModal').classList.add('on');cmsg('');}
+function closeConnect(){document.getElementById('connectModal').classList.remove('on');}
+function cmsg(t,ok){const e=document.getElementById('connectMsg');if(!t){e.className='msg';e.textContent='';return;}e.textContent=t;e.className='msg '+(ok?'ok':'err');}
+function pickKind(el){document.querySelectorAll('#connectModal .src').forEach(s=>s.classList.remove('on'));el.classList.add('on');connKind=el.dataset.kind;
+  document.getElementById('wdFields').style.display=connKind==='workday'?'block':'none';
+  document.getElementById('mcpFields').style.display=connKind==='mcp'?'block':'none';}
+async function saveConnection(){
+  const btn=document.getElementById('btnConnect');btn.disabled=true;cmsg('Verifying…',true);
+  const body=connKind==='workday'
+    ?{action:'connect',kind:'workday',base_url:wd_base.value.trim(),tenant:wd_tenant.value.trim(),client_id:wd_client.value.trim()}
+    :{action:'connect',kind:'mcp',base_url:mcp_base.value.trim()};
   try{
-    const res=await fetch('/api/roster',{method:'POST',headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({source,fields})});
-    if(res.ok){const d=await res.json(); if(d.members) return d.members;}
-  }catch(e){}
-  // mock fallback
-  const names=["Aarav Shah","Priya Menon","Diego Torres","Sara Khan","Liam Chen","Maya Iyer","Noah Park","Zoe Alvarez"];
-  return names.map((n,i)=>({id:uid(),name:n,empId:"EMP-"+(2300+i*7),
-    start:"W"+(8+i)+" 2026",role:"SDR",mgr:"R. Banerjee"}));
+    const res=await fetch('/api/hr',{method:'POST',headers:{'Content-Type':'application/json',Authorization:await authHeader()},body:JSON.stringify(body)});
+    const d=await res.json();
+    if(!res.ok)throw new Error(d.error||'Failed');
+    CONNS.push(d.connection);cmsg('Connected.',true);
+    setTimeout(()=>{closeConnect();renderConns();},700);
+  }catch(e){cmsg(e.message);}
+  btn.disabled=false;
+}
+function renderConns(){
+  const el=document.getElementById('connList');
+  el.innerHTML=CONNS.length?CONNS.map(c=>`<div class="panel"><div style="display:flex;justify-content:space-between;align-items:center">
+    <div><div style="font-family:var(--disp);font-weight:700;font-size:16px">${c.kind==='workday'?'Workday':'MCP / HR'}</div>
+      <div class="help">${c.base_url||''} ${c.tenant?'· '+c.tenant:''}</div></div>
+    <span class="pill" style="background:var(--green)">${c.status}</span></div></div>`).join('')
+    :'<div class="empty">No connections yet. Add one to pull rosters.</div>';
 }
 
+/* ============ TEAMS ============ */
+let pickedConn='manual';
+function openCreate(){
+  document.getElementById('createModal').classList.add('on');tmsg('');
+  document.getElementById('srcConn').innerHTML=CONNS.map(c=>`<div class="src" data-conn="${c.id}" onclick="pickConn(this)">
+    <div class="src-ico">${c.kind==='workday'?'WD':'MCP'}</div><div><b>${c.kind==='workday'?'Workday':'MCP / HR'}</b>
+    <div class="help">${c.base_url||''}</div></div></div>`).join('');
+  // default to first connection if any
+  pickedConn='manual';
+}
+function closeCreate(){document.getElementById('createModal').classList.remove('on');}
+function tmsg(t,ok){const e=document.getElementById('createMsg');if(!t){e.className='msg';e.textContent='';return;}e.textContent=t;e.className='msg '+(ok?'ok':'err');}
+function pickConn(el){document.querySelectorAll('#createModal .src').forEach(s=>s.classList.remove('on'));el.classList.add('on');pickedConn=el.dataset.conn;}
+async function createTeam(){
+  const name=newTeamName.value.trim();if(!name)return tmsg('Enter a team name.');
+  const fields=['name','id'];[['f_start','start'],['f_role','role'],['f_mgr','mgr']].forEach(([id,k])=>{if(document.getElementById(id).checked)fields.push(k);});
+  const btn=document.getElementById('btnCreate');btn.disabled=true;
+  const src=pickedConn==='manual'?'manual':(CONNS.find(c=>c.id===pickedConn)?.kind||'manual');
+  // create team row
+  const {data:team,error}=await sb.from('teams').insert({owner_id:session.user.id,name,source:src,fields}).select().single();
+  if(error){tmsg('Create failed: '+error.message);btn.disabled=false;return;}
+  TEAMS.push(team);
+  // pull roster if a real connection
+  if(pickedConn!=='manual'){
+    tmsg('Pulling roster…',true);
+    try{
+      const res=await fetch('/api/hr',{method:'POST',headers:{'Content-Type':'application/json',Authorization:await authHeader()},
+        body:JSON.stringify({action:'roster',connection_id:pickedConn,fields})});
+      const d=await res.json();
+      if(!res.ok)throw new Error(d.error||'Roster pull failed');
+      const rows=(d.members||[]).map(m=>({owner_id:session.user.id,team_id:team.id,
+        name:m.name,emp_id:m.emp_id,start_week:m.start_week,role:m.role,manager:m.manager}));
+      if(rows.length){const {data:ins}=await sb.from('members').insert(rows).select();MEMBERS.push(...(ins||[]));}
+    }catch(e){tmsg('Team made, but roster pull failed: '+e.message);btn.disabled=false;setTimeout(()=>{closeCreate();show('teams');},1400);return;}
+  }
+  btn.disabled=false;closeCreate();show('teams');
+}
 function renderTeams(){
   const el=document.getElementById('teamList');
-  if(!DB.teams.length){el.innerHTML='<div class="empty">No teams yet. Create one to pull a roster.</div>';return;}
-  el.innerHTML=DB.teams.map(t=>{
-    const assessed=DB.assess.filter(a=>a.teamId===t.id).length;
+  if(!TEAMS.length){el.innerHTML='<div class="empty">No teams yet.</div>';return;}
+  el.innerHTML=TEAMS.map(t=>{const mem=MEMBERS.filter(m=>m.team_id===t.id);
+    const assessed=ASSESS.filter(a=>a.team_id===t.id).length;
     return `<div class="panel" style="cursor:pointer" onclick="openTeam('${t.id}')">
       <div style="display:flex;justify-content:space-between;align-items:center">
         <div><div style="font-family:var(--disp);font-weight:700;font-size:17px">${t.name}</div>
-          <div class="help" style="margin-top:2px">${t.members.length} members · ${assessed} assessed · via ${t.source}</div></div>
+          <div class="help" style="margin-top:2px">${mem.length} members · ${assessed} assessed · ${t.source}</div></div>
         <span class="tag">open →</span></div></div>`;}).join('');
 }
 function openTeam(id){
-  const t=DB.teams.find(x=>x.id===id);
-  const rows=t.members.map(m=>{
-    const a=DB.assess.filter(x=>x.teamId===id&&x.name.startsWith(m.name)).slice(-1)[0];
+  const t=TEAMS.find(x=>x.id===id),mem=MEMBERS.filter(m=>m.team_id===id);
+  const rows=mem.map(m=>{const a=ASSESS.filter(x=>x.team_id===id&&x.name.startsWith(m.name))[0];
     const c=a?bandColorHex[a.result.band]:"#c4bca5";
-    return `<tr><td><span class="dot" style="background:${c}"></span>${m.name}</td>
-      <td>${m.empId}</td><td>${a?a.result.composite:'—'}</td><td>${a?a.result.band:'not assessed'}</td></tr>`;}).join('');
-  document.getElementById('teamModalBody').innerHTML=`
-    <h3>${t.name}</h3><p class="help" style="margin-top:0">${t.members.length} members · source: ${t.source}</p>
+    return `<tr><td><span class="dot" style="background:${c}"></span>${m.name}</td><td>${m.emp_id||''}</td>
+      <td>${a?a.result.composite:'—'}</td><td>${a?a.result.band:'not assessed'}</td></tr>`;}).join('');
+  document.getElementById('teamModalBody').innerHTML=`<h3>${t.name}</h3>
+    <p class="help" style="margin-top:0">${mem.length} members · source: ${t.source}</p>
     <div style="overflow:auto"><table><thead><tr><th>Name</th><th>ID</th><th>Score</th><th>Status</th></tr></thead>
-      <tbody>${rows||'<tr><td colspan=4 class=empty>No members</td></tr>'}</tbody></table></div>
+    <tbody>${rows||'<tr><td colspan=4 class=empty>No members</td></tr>'}</tbody></table></div>
     <div class="btnrow" style="margin-top:14px">
-      <button class="btn alt sm" onclick="exportTeamCSV('${id}')">Export team · CSV</button>
-      <button class="btn alt sm" onclick="exportTeamPDF('${id}')">Export team · PDF</button>
+      <button class="btn alt sm" onclick="exportTeamCSV('${id}')">Team · CSV</button>
+      <button class="btn alt sm" onclick="exportTeamPDF('${id}')">Team · PDF</button>
       <button class="btn alt sm" onclick="closeTeam()">Close</button></div>`;
   document.getElementById('teamModal').classList.add('on');
 }
 function closeTeam(){document.getElementById('teamModal').classList.remove('on');}
 
-/* ---------------- dashboard ---------------- */
+/* ============ DASHBOARD ============ */
+function latestPerPerson(){const map={};[...ASSESS].reverse().forEach(a=>{map[a.team_id+'|'+a.name]=a;});return Object.values(map);}
 function renderDash(){
-  const latest=latestPerPerson();
-  const tot=latest.length;
+  const latest=latestPerPerson(),tot=latest.length;
   const prof=latest.filter(a=>a.result.band==="Proficient").length;
   const dev=latest.filter(a=>a.result.band==="Developing").length;
   const lag=latest.filter(a=>a.result.band==="Lagging").length;
   const avg=tot?Math.round(latest.reduce((s,a)=>s+a.result.composite,0)/tot):0;
   document.getElementById('dashStats').innerHTML=`
-    <div class="stat"><div class="stat-n">${DB.teams.length}</div><div class="stat-l">Teams</div></div>
+    <div class="stat"><div class="stat-n">${TEAMS.length}</div><div class="stat-l">Teams</div></div>
     <div class="stat"><div class="stat-n">${tot}</div><div class="stat-l">Assessed</div></div>
     <div class="stat"><div class="stat-n">${avg}</div><div class="stat-l">Avg score</div></div>
     <div class="stat"><div class="stat-n">${prof}</div><div class="stat-l">Proficient</div></div>`;
-  const totalMembers=DB.teams.reduce((s,t)=>s+t.members.length,0);
-  const na=Math.max(0,totalMembers-tot);
+  const totalMembers=MEMBERS.length,na=Math.max(0,totalMembers-tot);
   const seg=[[prof,'var(--green)'],[dev,'var(--amber)'],[lag,'var(--red)'],[na,'var(--line)']];
   const sum=seg.reduce((s,x)=>s+x[0],0)||1;
-  document.getElementById('dashSeg').innerHTML=seg.map(([n,c])=>
-    n?`<div style="background:${c};width:${n/sum*100}%">${n}</div>`:'').join('')||'<div style="background:var(--line);width:100%;color:var(--muted)">no data</div>';
-  document.getElementById('dashTeams').innerHTML=DB.teams.length?
-    DB.teams.map(t=>{const la=DB.assess.filter(a=>a.teamId===t.id);
-      const av=la.length?Math.round(la.reduce((s,a)=>s+a.result.composite,0)/la.length):0;
-      return `<div class="metric"><span>${t.name}</span><span>${la.length}/${t.members.length} assessed · avg ${av||'—'}</span></div>`;}).join('')
+  document.getElementById('dashSeg').innerHTML=seg.map(([n,c])=>n?`<div style="background:${c};width:${n/sum*100}%">${n}</div>`:'').join('')
+    ||'<div style="background:var(--line);width:100%;color:var(--muted)">no data</div>';
+  document.getElementById('dashTeams').innerHTML=TEAMS.length?TEAMS.map(t=>{const la=ASSESS.filter(a=>a.team_id===t.id);
+    const av=la.length?Math.round(la.reduce((s,a)=>s+a.result.composite,0)/la.length):0;
+    return `<div class="metric"><span>${t.name}</span><span>${la.length}/${MEMBERS.filter(m=>m.team_id===t.id).length} assessed · avg ${av||'—'}</span></div>`;}).join('')
     :'<div class="empty">No teams yet.</div>';
 }
-function latestPerPerson(){
-  const map={}; DB.assess.forEach(a=>{map[a.teamId+'|'+a.name]=a;}); return Object.values(map);
-}
 
-/* ---------------- reports ---------------- */
+/* ============ REPORTS ============ */
 function renderReports(){
   const a=latestPerPerson();
-  if(!a.length){document.getElementById('repTable').innerHTML='<div class="empty">No assessments saved yet.</div>';return;}
-  const rows=a.sort((x,y)=>y.result.composite-x.result.composite).map(r=>{
-    const t=DB.teams.find(x=>x.id===r.teamId);
+  if(!a.length){document.getElementById('repTable').innerHTML='<div class="empty">No assessments yet.</div>';return;}
+  const rows=a.sort((x,y)=>y.result.composite-x.result.composite).map(r=>{const t=TEAMS.find(x=>x.id===r.team_id);
     return `<tr><td><span class="dot" style="background:${bandColorHex[r.result.band]}"></span>${r.name}</td>
       <td>${t?t.name:'—'}</td><td>${r.result.composite}</td><td>${r.result.band}</td>
-      <td>${new Date(r.date).toLocaleDateString()}</td></tr>`;}).join('');
+      <td>${new Date(r.created_at).toLocaleDateString()}</td></tr>`;}).join('');
   document.getElementById('repTable').innerHTML=`<div style="overflow:auto"><table>
-    <thead><tr><th>Trainee</th><th>Team</th><th>Score</th><th>Status</th><th>Date</th></tr></thead>
-    <tbody>${rows}</tbody></table></div>`;
+    <thead><tr><th>Trainee</th><th>Team</th><th>Score</th><th>Status</th><th>Date</th></tr></thead><tbody>${rows}</tbody></table></div>`;
 }
 
-/* ---------------- export: CSV ---------------- */
-function dl(name,content,type){const b=new Blob([content],{type});const u=URL.createObjectURL(b);
-  const a=document.createElement('a');a.href=u;a.download=name;a.click();URL.revokeObjectURL(u);}
+/* ============ EXPORT ============ */
+function dl(name,content,type){const b=new Blob([content],{type});const u=URL.createObjectURL(b);const a=document.createElement('a');a.href=u;a.download=name;a.click();URL.revokeObjectURL(u);}
 function csvRow(arr){return arr.map(v=>`"${String(v??'').replace(/"/g,'""')}"`).join(',');}
-function recToRow(r){const t=DB.teams.find(x=>x.id===r.teamId);
+function recToRow(r){const t=TEAMS.find(x=>x.id===r.team_id);
   return [r.name,t?t.name:'',r.cohort||'',r.result.composite,r.result.band,r.result.velocity,r.result.quality,
-    r.result.reached+'/'+MILES.length,...MILES.map(m=>r.milestones[m.key]||''),new Date(r.date).toLocaleDateString()];}
+    r.result.reached+'/'+MILES.length,...MILES.map(m=>r.milestones[m.key]||''),new Date(r.created_at).toLocaleDateString()];}
 const CSV_HEAD=["Trainee","Team","Cohort","Score","Status","Velocity","Quality","Milestones",...MILES.map(m=>m.name),"Date"];
-function exportRosterCSV(){const rows=latestPerPerson().map(recToRow);
-  dl('rampiq_all.csv',[csvRow(CSV_HEAD),...rows.map(csvRow)].join('\n'),'text/csv');}
-function exportTeamCSV(id){const rows=DB.assess.filter(a=>a.teamId===id).map(recToRow);
-  dl('rampiq_team.csv',[csvRow(CSV_HEAD),...rows.map(csvRow)].join('\n'),'text/csv');}
-function exportOneCSV(enc){const name=decodeURIComponent(enc);const r=latestPerPerson().find(x=>x.name===name);
-  if(r)dl('rampiq_'+name.replace(/\W+/g,'_')+'.csv',[csvRow(CSV_HEAD),csvRow(recToRow(r))].join('\n'),'text/csv');}
-
-/* ---------------- export: PDF ---------------- */
+function exportRosterCSV(){dl('rampiq_all.csv',[csvRow(CSV_HEAD),...latestPerPerson().map(r=>csvRow(recToRow(r)))].join('\n'),'text/csv');}
+function exportTeamCSV(id){dl('rampiq_team.csv',[csvRow(CSV_HEAD),...ASSESS.filter(a=>a.team_id===id).map(r=>csvRow(recToRow(r)))].join('\n'),'text/csv');}
 function pdfDoc(){const {jsPDF}=window.jspdf;return new jsPDF({unit:'pt',format:'a4'});}
 function pdfHeader(doc,title){doc.setFillColor(19,38,31);doc.rect(0,0,595,60,'F');
   doc.setTextColor(240,236,225);doc.setFont('times','bold');doc.setFontSize(20);doc.text('RampIQ',40,38);
-  doc.setFont('helvetica','normal');doc.setFontSize(10);doc.setTextColor(180,170,150);doc.text(title,40,52);
-  doc.setTextColor(19,38,31);}
-function exportOnePDF(enc){const name=decodeURIComponent(enc);const r=latestPerPerson().find(x=>x.name===name);
-  if(!r)return; const doc=pdfDoc();pdfHeader(doc,'Speed to Proficiency — Individual Report');
-  let y=95;doc.setFont('times','bold');doc.setFontSize(22);doc.text(r.name,40,y);
-  y+=18;doc.setFont('helvetica','normal');doc.setFontSize(11);doc.setTextColor(90,107,98);
-  const t=DB.teams.find(x=>x.id===r.teamId);doc.text(`${t?t.name+' · ':''}${r.cohort||''}`,40,y);
-  y+=34;const c=hexToRgb(bandColorHex[r.result.band]);doc.setFillColor(...c);doc.roundedRect(40,y,515,70,5,5,'F');
-  doc.setTextColor(255,255,255);doc.setFont('times','bold');doc.setFontSize(40);doc.text(String(r.result.composite),60,y+50);
-  doc.setFont('helvetica','bold');doc.setFontSize(13);doc.text(r.result.band.toUpperCase(),130,y+38);
-  doc.setFont('helvetica','normal');doc.setFontSize(10);
-  doc.text(`Velocity ${r.result.velocity}/100   ·   Quality ${r.result.quality}/100   ·   ${r.result.reached}/${MILES.length} milestones`,130,y+55);
-  y+=100;doc.setTextColor(19,38,31);doc.setFont('helvetica','bold');doc.setFontSize(11);doc.text('Milestone ramp',40,y);y+=8;
-  doc.setFont('helvetica','normal');doc.setFontSize(10);
-  MILES.forEach(m=>{y+=18;const v=r.milestones[m.key];
-    const st=!v?'not reached':v<=m.bench?`wk ${v} · on/ahead`:`wk ${v} · ${v-m.bench} late`;
-    doc.setTextColor(90,107,98);doc.text(m.name,50,y);doc.text(`bench wk ${m.bench}`,330,y);
-    doc.setTextColor(19,38,31);doc.text(st,430,y);});
-  doc.save('rampiq_'+name.replace(/\W+/g,'_')+'.pdf');}
-function exportRosterPDF(){rosterPDF(latestPerPerson(),'All teams','rampiq_all.pdf');}
-function exportTeamPDF(id){const t=DB.teams.find(x=>x.id===id);
-  rosterPDF(DB.assess.filter(a=>a.teamId===id),t.name,'rampiq_team.pdf');}
+  doc.setFont('helvetica','normal');doc.setFontSize(10);doc.setTextColor(180,170,150);doc.text(title,40,52);doc.setTextColor(19,38,31);}
+function hexToRgb(h){const n=parseInt(h.slice(1),16);return[n>>16,(n>>8)&255,n&255];}
 function rosterPDF(recs,title,fname){const doc=pdfDoc();pdfHeader(doc,'Roster Report — '+title);
   let y=90;doc.setFont('helvetica','bold');doc.setFontSize(10);doc.setTextColor(90,107,98);
   doc.text('TRAINEE',40,y);doc.text('SCORE',330,y);doc.text('STATUS',400,y);doc.text('VEL/QUAL',490,y);
-  y+=6;doc.setDrawColor(196,188,165);doc.line(40,y,555,y);
-  doc.setFont('helvetica','normal');doc.setTextColor(19,38,31);
-  recs.sort((a,b)=>b.result.composite-a.result.composite).forEach(r=>{y+=20;
-    if(y>800){doc.addPage();y=60;}
+  y+=6;doc.setDrawColor(196,188,165);doc.line(40,y,555,y);doc.setFont('helvetica','normal');doc.setTextColor(19,38,31);
+  recs.sort((a,b)=>b.result.composite-a.result.composite).forEach(r=>{y+=20;if(y>800){doc.addPage();y=60;}
     const c=hexToRgb(bandColorHex[r.result.band]);doc.setFillColor(...c);doc.circle(44,y-3,3,'F');
-    doc.text(r.name,54,y);doc.text(String(r.result.composite),330,y);doc.text(r.result.band,400,y);
-    doc.text(`${r.result.velocity}/${r.result.quality}`,490,y);});
+    doc.text(r.name,54,y);doc.text(String(r.result.composite),330,y);doc.text(r.result.band,400,y);doc.text(`${r.result.velocity}/${r.result.quality}`,490,y);});
   doc.save(fname);}
-function hexToRgb(h){const n=parseInt(h.slice(1),16);return[n>>16,(n>>8)&255,n&255];}
+function exportRosterPDF(){rosterPDF(latestPerPerson(),'All teams','rampiq_all.pdf');}
+function exportTeamPDF(id){const t=TEAMS.find(x=>x.id===id);rosterPDF(ASSESS.filter(a=>a.team_id===id),t.name,'rampiq_team.pdf');}
 
-/* ---------------- init ---------------- */
-renderDash();
+/* ============ INIT ============ */
+initSupabase();
 </script>
 </body>
 </html>

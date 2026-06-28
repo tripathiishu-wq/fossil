@@ -1,45 +1,55 @@
-# RampIQ — Speed to Proficiency (fsspl.xyz)
+# RampIQ — real auth + per-trainer isolation + Workday
 
-SaaS tool for assessing sales-trainee speed to proficiency. Single-page frontend
-(works offline via localStorage) + Vercel serverless stubs for Workday / MCP HR pulls.
+Each trainer signs in and sees **only their own** teams, rosters, and assessments.
+Enforced server-side by Supabase Row Level Security — not just hidden in the UI.
 
-## Structure
 ```
-public/index.html   → the whole app (Dashboard, Teams, Assess, Reports, export)
-api/roster.js       → serverless: pulls a roster from Workday or an MCP/HR tool
-vercel.json         → routing
+public/index.html   → app (auth gate + dashboard/teams/assess/reports/connections)
+api/hr.js           → connect + roster pull, authenticated per user
+db/schema.sql       → tables + RLS policies
+package.json        → serverless deps (@supabase/supabase-js)
+vercel.json
 ```
 
-## Run / deploy
-- Local: open `public/index.html` directly — it works (mock roster, CSV+PDF export).
-- Deploy: push this folder to your repo → import in Vercel → set domain to fsspl.xyz.
-  The `/api/roster` function deploys automatically.
+## Setup — 3 steps you do once
 
-## Connect Workday (when ready)
-Set these in Vercel → Settings → Environment Variables:
-```
-WORKDAY_BASE_URL=https://wd2-impl-services1.workday.com
-WORKDAY_TENANT=your_tenant
-WORKDAY_CLIENT_ID=...
-WORKDAY_CLIENT_SECRET=...
-```
-Until set, the endpoint returns mock data so the product stays demoable.
-Adjust the worker API path in `api/roster.js` to match your tenant's REST endpoint.
+### 1. Supabase
+1. Create a project at supabase.com.
+2. SQL Editor → paste **db/schema.sql** → Run. (Creates tables + RLS.)
+3. Settings → API → copy the **Project URL** and **anon public key**.
+4. In `public/index.html`, find the CONFIG block near the bottom and set
+   `SUPABASE_URL` and `SUPABASE_ANON`. (The anon key is safe to ship — RLS protects data.)
+5. Authentication → Providers → Email is on by default. For instant testing,
+   turn OFF "Confirm email" so sign-ups log in immediately.
 
-## Connect another HR tool via MCP
+### 2. Vercel
+Push this folder to your repo → import in Vercel → point fsspl.xyz at it.
+Set Environment Variables (Settings → Environment Variables):
 ```
-MCP_SERVER_URL=https://your-mcp-host
-MCP_API_KEY=...
+SUPABASE_URL=https://YOUR-PROJECT.supabase.co
+SUPABASE_SERVICE_ROLE_KEY=...        # service_role key — server only, NEVER in frontend
+WORKDAY_CLIENT_SECRET=...            # the secret half of Workday OAuth
+MCP_API_KEY=...                      # if using an MCP/HR source
 ```
-The stub calls a `list_employees` tool; rename/reshape to match your MCP server.
 
-## Features
-- **Dashboard** — org-wide stats, proficiency mix, per-team rollups
-- **Teams** — Create team → pull roster (selectable fields: name/ID required, start/role/manager/cert/quota optional)
-- **Assess** — score against ramp curve (velocity 60% + quality 40%); name shows on every result
-- **Reports** — all assessments; export individual / team / org as CSV or PDF
+### 3. Workday (when ready)
+In Workday, register an API Client for Integrations (OAuth 2.0, client-credentials).
+You get a Client ID + Client Secret and your tenant + base URL.
+- Put the **secret** in Vercel as `WORKDAY_CLIENT_SECRET`.
+- Enter base URL, tenant, and Client ID in the app: **Connections → Add → Workday**.
+  The app verifies the credentials before saving the connection.
+- Then **Teams → Create team → pick the Workday connection** to pull a roster.
 
-## Scoring
-Composite = ramp velocity (60%) + quality signals (40%).
-Velocity rewards hitting milestones at/ahead of benchmark week.
-Bands: Proficient ≥78, Developing 55–77, Lagging <55. Tune in `index.html` (`MILES`, `score()`).
+> The worker API path in `api/hr.js` (`/ccx/api/staffing/v6/...`) may need adjusting
+> to match your tenant's enabled REST endpoints. That's the one line to tweak.
+
+## How isolation works
+- Every row carries `owner_id = auth.uid()`.
+- RLS policies allow each user to read/write **only** their own rows.
+- The `/api/hr` function verifies the caller's Supabase token before doing anything.
+- Two trainers can never see each other's data, even via the API.
+
+## Later: let managers see their team's trainers
+Right now isolation is strict (each trainer = an island). To give managers a
+roll-up across their reports, add a `manager_id` column + a second RLS policy.
+Say the word and I'll add the org-hierarchy layer.
