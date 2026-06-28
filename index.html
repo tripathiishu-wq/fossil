@@ -1,0 +1,247 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Speed to Proficiency — Sales Trainer Assessment</title>
+<style>
+  :root{
+    --ink:#13261f;
+    --paper:#f0ece1;
+    --paper2:#e6e0d1;
+    --line:#c4bca5;
+    --signal:#d4602a;       /* terracotta accent for pace */
+    --green:#2f6b4f;        /* proficient */
+    --amber:#c8901f;        /* developing */
+    --red:#b33a2e;          /* lagging */
+    --muted:#5a6b62;
+    --disp:"Georgia","Times New Roman",serif;
+    --body:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
+    --mono:"SF Mono",ui-monospace,"Roboto Mono",monospace;
+  }
+  *{box-sizing:border-box;-webkit-tap-highlight-color:transparent;}
+  body{margin:0;background:var(--paper);color:var(--ink);font-family:var(--body);
+    line-height:1.45;padding:0 0 64px;}
+  .wrap{max-width:760px;margin:0 auto;padding:0 18px;}
+  header{border-bottom:2px solid var(--ink);padding:26px 0 18px;margin-bottom:8px;}
+  .eyebrow{font-family:var(--mono);font-size:11px;letter-spacing:.22em;text-transform:uppercase;
+    color:var(--signal);margin:0 0 8px;}
+  h1{font-family:var(--disp);font-weight:700;font-size:30px;line-height:1.05;margin:0;letter-spacing:-.01em;}
+  h1 .sub{display:block;font-size:15px;font-weight:400;font-style:italic;color:var(--muted);margin-top:6px;}
+  .panel{background:var(--paper2);border:1px solid var(--line);border-radius:4px;padding:16px;margin:16px 0;}
+  .panel h2{font-family:var(--mono);font-size:11px;letter-spacing:.18em;text-transform:uppercase;
+    color:var(--muted);margin:0 0 14px;font-weight:600;}
+  label{display:block;font-size:12px;font-weight:600;letter-spacing:.04em;margin:0 0 5px;text-transform:uppercase;color:var(--muted);}
+  input[type=text],input[type=number],select{width:100%;padding:10px 11px;border:1px solid var(--line);
+    background:var(--paper);border-radius:3px;font-size:15px;font-family:var(--body);color:var(--ink);}
+  .row{display:flex;gap:12px;flex-wrap:wrap;}
+  .row > div{flex:1;min-width:130px;}
+  .mile{border-top:1px solid var(--line);padding:14px 0;}
+  .mile:first-child{border-top:none;}
+  .mile-head{display:flex;justify-content:space-between;align-items:baseline;gap:8px;}
+  .mile-name{font-family:var(--disp);font-size:17px;font-weight:700;}
+  .mile-bench{font-family:var(--mono);font-size:11px;color:var(--muted);}
+  .mile-sub{font-size:12px;color:var(--muted);margin:2px 0 9px;}
+  .help{font-size:11px;color:var(--muted);margin-top:4px;font-style:italic;}
+  button.calc{width:100%;background:var(--ink);color:var(--paper);border:none;padding:15px;
+    font-family:var(--mono);font-size:13px;letter-spacing:.14em;text-transform:uppercase;border-radius:4px;
+    cursor:pointer;margin-top:8px;}
+  button.calc:active{transform:translateY(1px);}
+  /* result */
+  #out{display:none;}
+  .score-card{text-align:center;padding:26px 16px;border-radius:5px;color:#fff;margin:16px 0;}
+  .score-num{font-family:var(--disp);font-size:62px;line-height:1;font-weight:700;}
+  .score-lab{font-family:var(--mono);font-size:13px;letter-spacing:.2em;text-transform:uppercase;margin-top:8px;opacity:.92;}
+  .score-tag{font-size:14px;margin-top:12px;max-width:420px;margin-left:auto;margin-right:auto;}
+  .metric{display:flex;justify-content:space-between;align-items:center;padding:11px 0;border-top:1px solid var(--line);font-size:14px;}
+  .metric:first-child{border-top:none;}
+  .metric b{font-family:var(--disp);}
+  .pill{font-family:var(--mono);font-size:10px;letter-spacing:.1em;text-transform:uppercase;
+    padding:3px 8px;border-radius:20px;color:#fff;}
+  .bar-track{height:8px;background:var(--line);border-radius:6px;overflow:hidden;margin-top:6px;}
+  .bar-fill{height:100%;border-radius:6px;}
+  .ramp{margin-top:8px;}
+  .ramp-row{display:flex;align-items:center;gap:10px;font-size:13px;padding:6px 0;}
+  .ramp-dot{width:11px;height:11px;border-radius:50%;flex:none;}
+  .ramp-d{font-family:var(--mono);font-size:11px;color:var(--muted);width:62px;flex:none;}
+  .foot{font-size:11px;color:var(--muted);text-align:center;margin-top:24px;font-style:italic;}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <p class="eyebrow">Sales Enablement · Trainer Track</p>
+    <h1>Speed to Proficiency
+      <span class="sub">How fast a new hire reaches independent selling — measured against the ramp curve, not just the calendar.</span>
+    </h1>
+  </header>
+
+  <div class="panel">
+    <h2>Trainee</h2>
+    <div class="row">
+      <div><label>Name / ID</label><input type="text" id="tname" placeholder="e.g. Priya M."></div>
+      <div><label>Cohort start week</label><input type="text" id="cohort" placeholder="e.g. W12 2026"></div>
+    </div>
+  </div>
+
+  <div class="panel">
+    <h2>Ramp Milestones — weeks to reach each</h2>
+    <p class="mile-sub" style="margin-top:-6px">Enter the actual week number the trainee hit each milestone. Leave blank if not yet reached. Benchmark = expected week for a typical hire.</p>
+    <div id="miles"></div>
+  </div>
+
+  <div class="panel">
+    <h2>Quality Signals — current state</h2>
+    <div class="row">
+      <div>
+        <label>Win rate vs. team avg</label>
+        <select id="winrate">
+          <option value="1">Below 60% of avg</option>
+          <option value="2">60–85% of avg</option>
+          <option value="3" selected>85–100% of avg</option>
+          <option value="4">At or above avg</option>
+        </select>
+      </div>
+      <div>
+        <label>Coach intervention needed</label>
+        <select id="coach">
+          <option value="1">Constant / on most calls</option>
+          <option value="2">Frequent</option>
+          <option value="3" selected>Occasional</option>
+          <option value="4">Rarely / runs solo</option>
+        </select>
+      </div>
+    </div>
+    <div class="row" style="margin-top:12px">
+      <div>
+        <label>Knowledge / certification</label>
+        <select id="cert">
+          <option value="1">Multiple gaps</option>
+          <option value="2">One gap</option>
+          <option value="3" selected>Passed, shaky areas</option>
+          <option value="4">Passed clean</option>
+        </select>
+      </div>
+      <div>
+        <label>Consistency last 3 weeks</label>
+        <select id="consist">
+          <option value="1">Volatile</option>
+          <option value="2">Improving but uneven</option>
+          <option value="3" selected>Steady upward</option>
+          <option value="4">Stable & predictable</option>
+        </select>
+      </div>
+    </div>
+  </div>
+
+  <button class="calc" onclick="run()">Assess Speed to Proficiency</button>
+
+  <div id="out"></div>
+
+  <p class="foot">A composite of ramp velocity (60%) and quality signals (40%). Velocity rewards hitting milestones at or ahead of benchmark.</p>
+</div>
+
+<script>
+const MILES = [
+  {key:"onboard",  name:"Onboarding complete",     sub:"Tools, systems, product basics", bench:2},
+  {key:"shadow",   name:"First shadowed call",      sub:"Observes a live cycle end-to-end", bench:3},
+  {key:"firstpitch",name:"First solo pitch",        sub:"Runs a discovery call unaided", bench:5},
+  {key:"firstdeal", name:"First closed deal",       sub:"Owns a deal to signature", bench:9},
+  {key:"quota",    name:"First quota-attainment month", sub:"Hits monthly target independently", bench:16},
+];
+
+const milesEl = document.getElementById('miles');
+MILES.forEach(m=>{
+  const d=document.createElement('div');
+  d.className='mile';
+  d.innerHTML=`
+    <div class="mile-head">
+      <span class="mile-name">${m.name}</span>
+      <span class="mile-bench">benchmark · wk ${m.bench}</span>
+    </div>
+    <div class="mile-sub">${m.sub}</div>
+    <input type="number" min="1" id="m_${m.key}" placeholder="actual week reached">`;
+  milesEl.appendChild(d);
+});
+
+function run(){
+  // ---- Velocity score ----
+  let vScores=[], reached=0, totalDelta=0, deltaCount=0;
+  MILES.forEach(m=>{
+    const v=parseFloat(document.getElementById('m_'+m.key).value);
+    if(!isNaN(v)&&v>0){
+      reached++;
+      const delta=m.bench-v; // positive = ahead of schedule
+      totalDelta+=delta; deltaCount++;
+      // ratio of benchmark to actual, capped
+      let r=m.bench/v;
+      r=Math.max(0.4,Math.min(1.6,r));
+      // map 0.4..1.6 -> 0..100
+      vScores.push(((r-0.4)/1.2)*100);
+    }
+  });
+  const reachFactor=reached/MILES.length;
+  const velPace = vScores.length? vScores.reduce((a,b)=>a+b,0)/vScores.length : 0;
+  // blend pace with how far through the ramp they are
+  const velocity = velPace*0.7 + reachFactor*100*0.3;
+
+  // ---- Quality score ----
+  const q=['winrate','coach','cert','consist'].map(id=>parseInt(document.getElementById(id).value));
+  const quality=(q.reduce((a,b)=>a+b,0)/16)*100; // 4 fields ×4 max =16
+
+  const composite=Math.round(velocity*0.6 + quality*0.4);
+  const avgDelta=deltaCount? (totalDelta/deltaCount):0;
+
+  // ---- band ----
+  let band,col,tag;
+  if(composite>=78){band="Proficient — Promote / Solo Ready";col="var(--green)";
+    tag="Reaching milestones at or ahead of pace with strong quality signals. Ready to run independently.";}
+  else if(composite>=55){band="Developing — On Track";col="var(--amber)";
+    tag="Progressing on the expected curve. Close a few gaps and reassess in 2–3 weeks.";}
+  else{band="Lagging — Needs Intervention";col="var(--red)";
+    tag="Behind pace or quality is soft. Build a targeted ramp plan before added autonomy.";}
+
+  const name=document.getElementById('tname').value||"Trainee";
+  const paceWord = avgDelta>0.5?`${avgDelta.toFixed(1)} wks ahead of benchmark`
+    : avgDelta<-0.5?`${Math.abs(avgDelta).toFixed(1)} wks behind benchmark`:"on benchmark pace";
+
+  const bar=(v,c)=>`<div class="bar-track"><div class="bar-fill" style="width:${Math.round(v)}%;background:${c}"></div></div>`;
+
+  // ramp visual
+  let ramp='';
+  MILES.forEach(m=>{
+    const v=parseFloat(document.getElementById('m_'+m.key).value);
+    let dot,txt;
+    if(isNaN(v)||v<=0){dot="var(--line)";txt=`not yet · bench wk ${m.bench}`;}
+    else if(v<=m.bench){dot="var(--green)";txt=`wk ${v} · ${m.bench-v>0?(m.bench-v)+' early':'on time'}`;}
+    else if(v<=m.bench*1.25){dot="var(--amber)";txt=`wk ${v} · ${v-m.bench} late`;}
+    else{dot="var(--red)";txt=`wk ${v} · ${v-m.bench} late`;}
+    ramp+=`<div class="ramp-row"><span class="ramp-dot" style="background:${dot}"></span>
+      <span style="flex:1">${m.name}</span><span class="ramp-d">${txt}</span></div>`;
+  });
+
+  document.getElementById('out').style.display='block';
+  document.getElementById('out').innerHTML=`
+    <div class="score-card" style="background:${col}">
+      <div class="score-num">${composite}</div>
+      <div class="score-lab">${band}</div>
+      <div class="score-tag">${tag}</div>
+    </div>
+    <div class="panel">
+      <h2>${name} · ${paceWord}</h2>
+      <div class="metric"><span>Ramp velocity <b>(60%)</b></span><span>${Math.round(velocity)}/100</span></div>
+      ${bar(velocity,'var(--signal)')}
+      <div class="metric" style="margin-top:14px"><span>Quality signals <b>(40%)</b></span><span>${Math.round(quality)}/100</span></div>
+      ${bar(quality,'var(--ink)')}
+      <div class="metric" style="margin-top:14px"><span>Milestones reached</span>
+        <span class="pill" style="background:${col}">${reached} / ${MILES.length}</span></div>
+    </div>
+    <div class="panel">
+      <h2>Milestone ramp</h2>
+      <div class="ramp">${ramp}</div>
+    </div>`;
+  document.getElementById('out').scrollIntoView({behavior:'smooth',block:'start'});
+}
+</script>
+</body>
+</html>
