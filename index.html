@@ -3,245 +3,544 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Speed to Proficiency — Sales Trainer Assessment</title>
+<title>RampIQ — Speed to Proficiency</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <style>
   :root{
-    --ink:#13261f;
-    --paper:#f0ece1;
-    --paper2:#e6e0d1;
-    --line:#c4bca5;
-    --signal:#d4602a;       /* terracotta accent for pace */
-    --green:#2f6b4f;        /* proficient */
-    --amber:#c8901f;        /* developing */
-    --red:#b33a2e;          /* lagging */
-    --muted:#5a6b62;
+    --ink:#13261f; --paper:#f0ece1; --paper2:#e6e0d1; --card:#fbf9f3;
+    --line:#c4bca5; --signal:#d4602a; --green:#2f6b4f; --amber:#c8901f; --red:#b33a2e;
+    --muted:#5a6b62; --ink2:#1c3a2e;
     --disp:"Georgia","Times New Roman",serif;
     --body:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
     --mono:"SF Mono",ui-monospace,"Roboto Mono",monospace;
   }
   *{box-sizing:border-box;-webkit-tap-highlight-color:transparent;}
-  body{margin:0;background:var(--paper);color:var(--ink);font-family:var(--body);
-    line-height:1.45;padding:0 0 64px;}
-  .wrap{max-width:760px;margin:0 auto;padding:0 18px;}
-  header{border-bottom:2px solid var(--ink);padding:26px 0 18px;margin-bottom:8px;}
-  .eyebrow{font-family:var(--mono);font-size:11px;letter-spacing:.22em;text-transform:uppercase;
-    color:var(--signal);margin:0 0 8px;}
-  h1{font-family:var(--disp);font-weight:700;font-size:30px;line-height:1.05;margin:0;letter-spacing:-.01em;}
-  h1 .sub{display:block;font-size:15px;font-weight:400;font-style:italic;color:var(--muted);margin-top:6px;}
-  .panel{background:var(--paper2);border:1px solid var(--line);border-radius:4px;padding:16px;margin:16px 0;}
+  body{margin:0;background:var(--paper);color:var(--ink);font-family:var(--body);line-height:1.45;}
+  a{color:inherit;}
+  /* shell */
+  .topbar{position:sticky;top:0;z-index:30;background:var(--ink);color:var(--paper);
+    display:flex;align-items:center;gap:18px;padding:0 18px;height:54px;}
+  .brand{font-family:var(--disp);font-weight:700;font-size:19px;letter-spacing:-.01em;}
+  .brand span{color:var(--signal);}
+  .nav{display:flex;gap:4px;margin-left:8px;flex:1;overflow-x:auto;}
+  .nav button{background:none;border:none;color:var(--paper);opacity:.6;font-family:var(--mono);
+    font-size:11px;letter-spacing:.12em;text-transform:uppercase;padding:8px 11px;cursor:pointer;
+    border-radius:4px;white-space:nowrap;}
+  .nav button.on{opacity:1;background:rgba(255,255,255,.1);}
+  .wrap{max-width:880px;margin:0 auto;padding:22px 18px 80px;}
+  .view{display:none;} .view.on{display:block;}
+  h1{font-family:var(--disp);font-weight:700;font-size:27px;line-height:1.08;margin:0 0 4px;letter-spacing:-.01em;}
+  .lede{font-size:14px;color:var(--muted);font-style:italic;margin:0 0 18px;max-width:560px;}
+  .panel{background:var(--paper2);border:1px solid var(--line);border-radius:5px;padding:16px;margin:14px 0;}
   .panel h2{font-family:var(--mono);font-size:11px;letter-spacing:.18em;text-transform:uppercase;
-    color:var(--muted);margin:0 0 14px;font-weight:600;}
-  label{display:block;font-size:12px;font-weight:600;letter-spacing:.04em;margin:0 0 5px;text-transform:uppercase;color:var(--muted);}
-  input[type=text],input[type=number],select{width:100%;padding:10px 11px;border:1px solid var(--line);
-    background:var(--paper);border-radius:3px;font-size:15px;font-family:var(--body);color:var(--ink);}
+    color:var(--muted);margin:0 0 13px;font-weight:600;}
+  label{display:block;font-size:11px;font-weight:600;letter-spacing:.05em;margin:0 0 5px;text-transform:uppercase;color:var(--muted);}
+  input,select{width:100%;padding:10px 11px;border:1px solid var(--line);background:var(--card);
+    border-radius:3px;font-size:15px;font-family:var(--body);color:var(--ink);}
   .row{display:flex;gap:12px;flex-wrap:wrap;}
-  .row > div{flex:1;min-width:130px;}
-  .mile{border-top:1px solid var(--line);padding:14px 0;}
-  .mile:first-child{border-top:none;}
+  .row>div{flex:1;min-width:130px;}
+  .btn{background:var(--ink);color:var(--paper);border:none;padding:13px 18px;font-family:var(--mono);
+    font-size:12px;letter-spacing:.14em;text-transform:uppercase;border-radius:4px;cursor:pointer;}
+  .btn:active{transform:translateY(1px);}
+  .btn.alt{background:var(--card);color:var(--ink);border:1px solid var(--line);}
+  .btn.sig{background:var(--signal);}
+  .btn.sm{padding:8px 12px;font-size:11px;}
+  .btnrow{display:flex;gap:9px;flex-wrap:wrap;margin-top:10px;}
+  .mile{border-top:1px solid var(--line);padding:13px 0;} .mile:first-child{border-top:none;}
   .mile-head{display:flex;justify-content:space-between;align-items:baseline;gap:8px;}
-  .mile-name{font-family:var(--disp);font-size:17px;font-weight:700;}
+  .mile-name{font-family:var(--disp);font-size:16px;font-weight:700;}
   .mile-bench{font-family:var(--mono);font-size:11px;color:var(--muted);}
-  .mile-sub{font-size:12px;color:var(--muted);margin:2px 0 9px;}
-  .help{font-size:11px;color:var(--muted);margin-top:4px;font-style:italic;}
-  button.calc{width:100%;background:var(--ink);color:var(--paper);border:none;padding:15px;
-    font-family:var(--mono);font-size:13px;letter-spacing:.14em;text-transform:uppercase;border-radius:4px;
-    cursor:pointer;margin-top:8px;}
-  button.calc:active{transform:translateY(1px);}
+  .mile-sub{font-size:12px;color:var(--muted);margin:2px 0 8px;}
   /* result */
-  #out{display:none;}
-  .score-card{text-align:center;padding:26px 16px;border-radius:5px;color:#fff;margin:16px 0;}
-  .score-num{font-family:var(--disp);font-size:62px;line-height:1;font-weight:700;}
-  .score-lab{font-family:var(--mono);font-size:13px;letter-spacing:.2em;text-transform:uppercase;margin-top:8px;opacity:.92;}
-  .score-tag{font-size:14px;margin-top:12px;max-width:420px;margin-left:auto;margin-right:auto;}
+  .score-card{text-align:center;padding:24px 16px;border-radius:6px;color:#fff;margin:14px 0;}
+  .score-who{font-family:var(--mono);font-size:12px;letter-spacing:.18em;text-transform:uppercase;opacity:.9;margin-bottom:10px;}
+  .score-num{font-family:var(--disp);font-size:58px;line-height:1;font-weight:700;}
+  .score-lab{font-family:var(--mono);font-size:12px;letter-spacing:.18em;text-transform:uppercase;margin-top:8px;opacity:.92;}
+  .score-tag{font-size:13.5px;margin-top:11px;max-width:430px;margin-left:auto;margin-right:auto;}
   .metric{display:flex;justify-content:space-between;align-items:center;padding:11px 0;border-top:1px solid var(--line);font-size:14px;}
   .metric:first-child{border-top:none;}
-  .metric b{font-family:var(--disp);}
-  .pill{font-family:var(--mono);font-size:10px;letter-spacing:.1em;text-transform:uppercase;
-    padding:3px 8px;border-radius:20px;color:#fff;}
+  .pill{font-family:var(--mono);font-size:10px;letter-spacing:.1em;text-transform:uppercase;padding:3px 9px;border-radius:20px;color:#fff;}
   .bar-track{height:8px;background:var(--line);border-radius:6px;overflow:hidden;margin-top:6px;}
   .bar-fill{height:100%;border-radius:6px;}
-  .ramp{margin-top:8px;}
   .ramp-row{display:flex;align-items:center;gap:10px;font-size:13px;padding:6px 0;}
   .ramp-dot{width:11px;height:11px;border-radius:50%;flex:none;}
-  .ramp-d{font-family:var(--mono);font-size:11px;color:var(--muted);width:62px;flex:none;}
-  .foot{font-size:11px;color:var(--muted);text-align:center;margin-top:24px;font-style:italic;}
+  .ramp-d{font-family:var(--mono);font-size:11px;color:var(--muted);width:70px;flex:none;text-align:right;}
+  /* tables */
+  table{width:100%;border-collapse:collapse;font-size:13.5px;}
+  th{font-family:var(--mono);font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--muted);
+    text-align:left;padding:8px 10px;border-bottom:2px solid var(--line);}
+  td{padding:10px;border-bottom:1px solid var(--line);}
+  tr.clk{cursor:pointer;} tr.clk:hover{background:var(--card);}
+  .dot{display:inline-block;width:9px;height:9px;border-radius:50%;margin-right:6px;}
+  .empty{text-align:center;color:var(--muted);font-style:italic;padding:30px 10px;font-size:14px;}
+  /* dashboard cards */
+  .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;}
+  .stat{background:var(--card);border:1px solid var(--line);border-radius:5px;padding:15px;}
+  .stat-n{font-family:var(--disp);font-size:34px;font-weight:700;line-height:1;}
+  .stat-l{font-family:var(--mono);font-size:10px;letter-spacing:.12em;text-transform:uppercase;color:var(--muted);margin-top:7px;}
+  .seg{display:flex;height:30px;border-radius:5px;overflow:hidden;margin-top:6px;border:1px solid var(--line);}
+  .seg div{display:flex;align-items:center;justify-content:center;color:#fff;font-size:11px;font-family:var(--mono);}
+  .modal-bg{display:none;position:fixed;inset:0;background:rgba(19,38,31,.55);z-index:50;align-items:center;justify-content:center;padding:16px;}
+  .modal-bg.on{display:flex;}
+  .modal{background:var(--paper);border-radius:7px;max-width:520px;width:100%;max-height:88vh;overflow:auto;padding:20px;}
+  .modal h3{font-family:var(--disp);margin:0 0 4px;font-size:20px;}
+  .chk{display:flex;align-items:center;gap:9px;padding:8px 0;border-bottom:1px solid var(--line);font-size:14px;}
+  .chk input{width:auto;}
+  .src{display:flex;gap:9px;align-items:center;background:var(--card);border:1px solid var(--line);border-radius:5px;padding:11px;margin:8px 0;cursor:pointer;}
+  .src.on{border-color:var(--signal);box-shadow:0 0 0 1px var(--signal);}
+  .src-ico{width:34px;height:34px;border-radius:6px;background:var(--ink);color:var(--paper);display:flex;align-items:center;justify-content:center;font-family:var(--mono);font-size:11px;font-weight:700;flex:none;}
+  .help{font-size:11px;color:var(--muted);font-style:italic;margin-top:5px;}
+  .tag{font-family:var(--mono);font-size:10px;letter-spacing:.08em;text-transform:uppercase;color:var(--signal);}
+  .foot{font-size:11px;color:var(--muted);text-align:center;margin-top:26px;font-style:italic;}
 </style>
 </head>
 <body>
-<div class="wrap">
-  <header>
-    <p class="eyebrow">Sales Enablement · Trainer Track</p>
-    <h1>Speed to Proficiency
-      <span class="sub">How fast a new hire reaches independent selling — measured against the ramp curve, not just the calendar.</span>
-    </h1>
-  </header>
+<div class="topbar">
+  <div class="brand">Ramp<span>IQ</span></div>
+  <div class="nav">
+    <button data-v="dash" class="on">Dashboard</button>
+    <button data-v="teams">Teams</button>
+    <button data-v="assess">Assess</button>
+    <button data-v="reports">Reports</button>
+  </div>
+</div>
+
+<!-- ================= DASHBOARD ================= -->
+<div class="view on" id="v-dash"><div class="wrap">
+  <h1>Overview</h1>
+  <p class="lede">Speed-to-proficiency across every team and trainee in your org.</p>
+  <div class="grid" id="dashStats"></div>
+  <div class="panel">
+    <h2>Proficiency mix</h2>
+    <div class="seg" id="dashSeg"></div>
+    <div style="display:flex;gap:16px;margin-top:9px;font-size:12px;flex-wrap:wrap">
+      <span><span class="dot" style="background:var(--green)"></span>Proficient</span>
+      <span><span class="dot" style="background:var(--amber)"></span>Developing</span>
+      <span><span class="dot" style="background:var(--red)"></span>Lagging</span>
+      <span><span class="dot" style="background:var(--line)"></span>Not assessed</span>
+    </div>
+  </div>
+  <div class="panel">
+    <h2>Teams</h2>
+    <div id="dashTeams"></div>
+  </div>
+</div></div>
+
+<!-- ================= TEAMS ================= -->
+<div class="view" id="v-teams"><div class="wrap">
+  <h1>Teams</h1>
+  <p class="lede">Pull a roster from Workday or another HR tool, or build one by hand.</p>
+  <div class="btnrow">
+    <button class="btn sig" onclick="openCreate()">+ Create team</button>
+  </div>
+  <div id="teamList"></div>
+</div></div>
+
+<!-- ================= ASSESS ================= -->
+<div class="view" id="v-assess"><div class="wrap">
+  <h1>Assess</h1>
+  <p class="lede">Score a trainee against the ramp curve. Pick a roster member or enter manually.</p>
 
   <div class="panel">
     <h2>Trainee</h2>
     <div class="row">
-      <div><label>Name / ID</label><input type="text" id="tname" placeholder="e.g. Priya M."></div>
+      <div>
+        <label>Team</label>
+        <select id="aTeam" onchange="fillTeamMembers()"><option value="">— manual entry —</option></select>
+      </div>
+      <div>
+        <label>Roster member</label>
+        <select id="aMember" onchange="fillMember()"><option value="">— select —</option></select>
+      </div>
+    </div>
+    <div class="row" style="margin-top:12px">
+      <div><label>Name / ID</label><input type="text" id="tname" placeholder="e.g. Priya M. · EMP-2381"></div>
       <div><label>Cohort start week</label><input type="text" id="cohort" placeholder="e.g. W12 2026"></div>
     </div>
   </div>
 
   <div class="panel">
-    <h2>Ramp Milestones — weeks to reach each</h2>
-    <p class="mile-sub" style="margin-top:-6px">Enter the actual week number the trainee hit each milestone. Leave blank if not yet reached. Benchmark = expected week for a typical hire.</p>
+    <h2>Ramp milestones — week reached</h2>
+    <p class="mile-sub" style="margin-top:-4px">Enter the actual week each milestone was hit. Blank = not yet reached.</p>
     <div id="miles"></div>
   </div>
 
   <div class="panel">
-    <h2>Quality Signals — current state</h2>
+    <h2>Quality signals</h2>
     <div class="row">
-      <div>
-        <label>Win rate vs. team avg</label>
-        <select id="winrate">
-          <option value="1">Below 60% of avg</option>
-          <option value="2">60–85% of avg</option>
-          <option value="3" selected>85–100% of avg</option>
-          <option value="4">At or above avg</option>
-        </select>
-      </div>
-      <div>
-        <label>Coach intervention needed</label>
-        <select id="coach">
-          <option value="1">Constant / on most calls</option>
-          <option value="2">Frequent</option>
-          <option value="3" selected>Occasional</option>
-          <option value="4">Rarely / runs solo</option>
-        </select>
-      </div>
+      <div><label>Win rate vs team avg</label><select id="winrate">
+        <option value="1">Below 60% of avg</option><option value="2">60–85%</option>
+        <option value="3" selected>85–100%</option><option value="4">At/above avg</option></select></div>
+      <div><label>Coach intervention</label><select id="coach">
+        <option value="1">Constant</option><option value="2">Frequent</option>
+        <option value="3" selected>Occasional</option><option value="4">Runs solo</option></select></div>
     </div>
     <div class="row" style="margin-top:12px">
-      <div>
-        <label>Knowledge / certification</label>
-        <select id="cert">
-          <option value="1">Multiple gaps</option>
-          <option value="2">One gap</option>
-          <option value="3" selected>Passed, shaky areas</option>
-          <option value="4">Passed clean</option>
-        </select>
-      </div>
-      <div>
-        <label>Consistency last 3 weeks</label>
-        <select id="consist">
-          <option value="1">Volatile</option>
-          <option value="2">Improving but uneven</option>
-          <option value="3" selected>Steady upward</option>
-          <option value="4">Stable & predictable</option>
-        </select>
-      </div>
+      <div><label>Knowledge / certification</label><select id="cert">
+        <option value="1">Multiple gaps</option><option value="2">One gap</option>
+        <option value="3" selected>Passed, shaky</option><option value="4">Passed clean</option></select></div>
+      <div><label>Consistency (3 wks)</label><select id="consist">
+        <option value="1">Volatile</option><option value="2">Uneven</option>
+        <option value="3" selected>Steady upward</option><option value="4">Stable</option></select></div>
     </div>
   </div>
 
-  <button class="calc" onclick="run()">Assess Speed to Proficiency</button>
-
+  <div class="btnrow">
+    <button class="btn" onclick="run()">Assess</button>
+    <button class="btn alt" onclick="run(true)">Assess &amp; save to team</button>
+  </div>
   <div id="out"></div>
+</div></div>
 
-  <p class="foot">A composite of ramp velocity (60%) and quality signals (40%). Velocity rewards hitting milestones at or ahead of benchmark.</p>
-</div>
+<!-- ================= REPORTS ================= -->
+<div class="view" id="v-reports"><div class="wrap">
+  <h1>Reports</h1>
+  <p class="lede">Every saved assessment. Export the roster or open an individual report.</p>
+  <div class="btnrow">
+    <button class="btn alt sm" onclick="exportRosterCSV()">Export all · CSV</button>
+    <button class="btn alt sm" onclick="exportRosterPDF()">Export all · PDF</button>
+  </div>
+  <div class="panel"><div id="repTable"></div></div>
+</div></div>
+
+<!-- ============ CREATE TEAM MODAL ============ -->
+<div class="modal-bg" id="createModal"><div class="modal">
+  <h3>Create team</h3>
+  <p class="help" style="margin-top:0">Pull a roster from a connected HR source, or start empty.</p>
+  <label>Team name</label>
+  <input type="text" id="newTeamName" placeholder="e.g. APAC SDR — Spring Cohort">
+  <div style="margin-top:14px">
+    <label>Source</label>
+    <div class="src on" data-src="workday" onclick="pickSrc(this)">
+      <div class="src-ico">WD</div>
+      <div><b>Workday</b><div class="help">Pull roster via Workday connector</div></div>
+    </div>
+    <div class="src" data-src="mcp" onclick="pickSrc(this)">
+      <div class="src-ico">MCP</div>
+      <div><b>Other HR tool (MCP / link)</b><div class="help">BambooHR, SuccessFactors, custom endpoint</div></div>
+    </div>
+    <div class="src" data-src="manual" onclick="pickSrc(this)">
+      <div class="src-ico">+</div>
+      <div><b>Manual</b><div class="help">Add names &amp; IDs yourself</div></div>
+    </div>
+  </div>
+  <div id="fieldPick" style="margin-top:14px">
+    <label>Fields to pull</label>
+    <div class="chk"><input type="checkbox" id="f_name" checked disabled><span>Name <span class="tag">required</span></span></div>
+    <div class="chk"><input type="checkbox" id="f_id" checked disabled><span>Employee ID <span class="tag">required</span></span></div>
+    <div class="chk"><input type="checkbox" id="f_start"><span>Start date</span></div>
+    <div class="chk"><input type="checkbox" id="f_role"><span>Role / title</span></div>
+    <div class="chk"><input type="checkbox" id="f_mgr"><span>Manager</span></div>
+    <div class="chk"><input type="checkbox" id="f_cert"><span>Certification records</span></div>
+    <div class="chk"><input type="checkbox" id="f_quota"><span>Quota / attainment history</span></div>
+  </div>
+  <div class="btnrow" style="margin-top:18px">
+    <button class="btn sig" onclick="createTeam()">Create</button>
+    <button class="btn alt" onclick="closeCreate()">Cancel</button>
+  </div>
+  <div id="createMsg" class="help" style="margin-top:10px"></div>
+</div></div>
+
+<!-- ============ TEAM DETAIL MODAL ============ -->
+<div class="modal-bg" id="teamModal"><div class="modal" id="teamModalBody"></div></div>
 
 <script>
-const MILES = [
-  {key:"onboard",  name:"Onboarding complete",     sub:"Tools, systems, product basics", bench:2},
-  {key:"shadow",   name:"First shadowed call",      sub:"Observes a live cycle end-to-end", bench:3},
-  {key:"firstpitch",name:"First solo pitch",        sub:"Runs a discovery call unaided", bench:5},
-  {key:"firstdeal", name:"First closed deal",       sub:"Owns a deal to signature", bench:9},
-  {key:"quota",    name:"First quota-attainment month", sub:"Hits monthly target independently", bench:16},
+/* ---------------- data layer ---------------- */
+const MILES=[
+  {key:"onboard",name:"Onboarding complete",sub:"Tools, systems, product basics",bench:2},
+  {key:"shadow",name:"First shadowed call",sub:"Observes a live cycle end-to-end",bench:3},
+  {key:"firstpitch",name:"First solo pitch",sub:"Runs discovery unaided",bench:5},
+  {key:"firstdeal",name:"First closed deal",sub:"Owns a deal to signature",bench:9},
+  {key:"quota",name:"First quota-attainment month",sub:"Hits monthly target solo",bench:16},
 ];
+const DB={
+  teams: JSON.parse(localStorage.getItem('riq_teams')||'[]'),
+  assess: JSON.parse(localStorage.getItem('riq_assess')||'[]'),
+  save(){localStorage.setItem('riq_teams',JSON.stringify(this.teams));
+         localStorage.setItem('riq_assess',JSON.stringify(this.assess));}
+};
+const uid=()=>Math.random().toString(36).slice(2,9);
 
-const milesEl = document.getElementById('miles');
-MILES.forEach(m=>{
-  const d=document.createElement('div');
-  d.className='mile';
-  d.innerHTML=`
-    <div class="mile-head">
-      <span class="mile-name">${m.name}</span>
-      <span class="mile-bench">benchmark · wk ${m.bench}</span>
-    </div>
+/* ---------------- nav ---------------- */
+document.querySelectorAll('.nav button').forEach(b=>b.onclick=()=>show(b.dataset.v));
+function show(v){
+  document.querySelectorAll('.nav button').forEach(b=>b.classList.toggle('on',b.dataset.v===v));
+  document.querySelectorAll('.view').forEach(x=>x.classList.remove('on'));
+  document.getElementById('v-'+v).classList.add('on');
+  if(v==='dash')renderDash(); if(v==='teams')renderTeams();
+  if(v==='reports')renderReports(); if(v==='assess')renderTeamSelect();
+  window.scrollTo(0,0);
+}
+
+/* ---------------- milestones UI ---------------- */
+const milesEl=document.getElementById('miles');
+MILES.forEach(m=>{const d=document.createElement('div');d.className='mile';
+  d.innerHTML=`<div class="mile-head"><span class="mile-name">${m.name}</span>
+    <span class="mile-bench">bench · wk ${m.bench}</span></div>
     <div class="mile-sub">${m.sub}</div>
-    <input type="number" min="1" id="m_${m.key}" placeholder="actual week reached">`;
-  milesEl.appendChild(d);
-});
+    <input type="number" min="1" id="m_${m.key}" placeholder="week reached">`;
+  milesEl.appendChild(d);});
 
-function run(){
-  // ---- Velocity score ----
-  let vScores=[], reached=0, totalDelta=0, deltaCount=0;
-  MILES.forEach(m=>{
-    const v=parseFloat(document.getElementById('m_'+m.key).value);
-    if(!isNaN(v)&&v>0){
-      reached++;
-      const delta=m.bench-v; // positive = ahead of schedule
-      totalDelta+=delta; deltaCount++;
-      // ratio of benchmark to actual, capped
-      let r=m.bench/v;
-      r=Math.max(0.4,Math.min(1.6,r));
-      // map 0.4..1.6 -> 0..100
-      vScores.push(((r-0.4)/1.2)*100);
-    }
-  });
+/* ---------------- scoring ---------------- */
+function score(milestones,quality){
+  let vScores=[],reached=0,totalDelta=0,dc=0;
+  MILES.forEach(m=>{const v=milestones[m.key];
+    if(v&&v>0){reached++;totalDelta+=(m.bench-v);dc++;
+      let r=Math.max(0.4,Math.min(1.6,m.bench/v));vScores.push(((r-0.4)/1.2)*100);}});
   const reachFactor=reached/MILES.length;
-  const velPace = vScores.length? vScores.reduce((a,b)=>a+b,0)/vScores.length : 0;
-  // blend pace with how far through the ramp they are
-  const velocity = velPace*0.7 + reachFactor*100*0.3;
+  const velPace=vScores.length?vScores.reduce((a,b)=>a+b,0)/vScores.length:0;
+  const velocity=velPace*0.7+reachFactor*100*0.3;
+  const q=[quality.winrate,quality.coach,quality.cert,quality.consist];
+  const qual=(q.reduce((a,b)=>a+b,0)/16)*100;
+  const composite=Math.round(velocity*0.6+qual*0.4);
+  const avgDelta=dc?totalDelta/dc:0;
+  let band,col;
+  if(composite>=78){band="Proficient";col="var(--green)";}
+  else if(composite>=55){band="Developing";col="var(--amber)";}
+  else{band="Lagging";col="var(--red)";}
+  return{composite,velocity:Math.round(velocity),quality:Math.round(qual),reached,avgDelta,band,col};
+}
+const bandColorHex={Proficient:"#2f6b4f",Developing:"#c8901f",Lagging:"#b33a2e"};
 
-  // ---- Quality score ----
-  const q=['winrate','coach','cert','consist'].map(id=>parseInt(document.getElementById(id).value));
-  const quality=(q.reduce((a,b)=>a+b,0)/16)*100; // 4 fields ×4 max =16
+/* ---------------- assess view ---------------- */
+function renderTeamSelect(){
+  const s=document.getElementById('aTeam');
+  s.innerHTML='<option value="">— manual entry —</option>'+
+    DB.teams.map(t=>`<option value="${t.id}">${t.name}</option>`).join('');
+}
+function fillTeamMembers(){
+  const t=DB.teams.find(x=>x.id===document.getElementById('aTeam').value);
+  const s=document.getElementById('aMember');
+  s.innerHTML='<option value="">— select —</option>'+
+    (t?t.members.map(m=>`<option value="${m.id}">${m.name} · ${m.empId}</option>`).join(''):'');
+}
+function fillMember(){
+  const t=DB.teams.find(x=>x.id===document.getElementById('aTeam').value);
+  if(!t)return; const m=t.members.find(x=>x.id===document.getElementById('aMember').value);
+  if(m){document.getElementById('tname').value=`${m.name} · ${m.empId}`;
+        if(m.start)document.getElementById('cohort').value=m.start;}
+}
 
-  const composite=Math.round(velocity*0.6 + quality*0.4);
-  const avgDelta=deltaCount? (totalDelta/deltaCount):0;
+function run(saveToTeam){
+  const ms={}; MILES.forEach(m=>{const v=parseFloat(document.getElementById('m_'+m.key).value);ms[m.key]=isNaN(v)?0:v;});
+  const q={winrate:+winrate.value,coach:+coach.value,cert:+cert.value,consist:+consist.value};
+  const r=score(ms,q);
+  const name=document.getElementById('tname').value.trim()||"Unnamed trainee";
+  const cohort=document.getElementById('cohort').value.trim();
+  renderResult(name,cohort,ms,r);
 
-  // ---- band ----
-  let band,col,tag;
-  if(composite>=78){band="Proficient — Promote / Solo Ready";col="var(--green)";
-    tag="Reaching milestones at or ahead of pace with strong quality signals. Ready to run independently.";}
-  else if(composite>=55){band="Developing — On Track";col="var(--amber)";
-    tag="Progressing on the expected curve. Close a few gaps and reassess in 2–3 weeks.";}
-  else{band="Lagging — Needs Intervention";col="var(--red)";
-    tag="Behind pace or quality is soft. Build a targeted ramp plan before added autonomy.";}
+  // persist
+  const rec={id:uid(),name,cohort,milestones:ms,quality:q,result:r,
+    teamId:document.getElementById('aTeam').value||null,date:new Date().toISOString()};
+  DB.assess=DB.assess.filter(a=>!(a.name===name&&a.teamId===rec.teamId)); // dedupe latest per person
+  DB.assess.push(rec); DB.save();
+  if(saveToTeam){
+    const tid=document.getElementById('aTeam').value;
+    if(!tid){alert("Pick a team first to save into it.");}
+  }
+}
 
-  const name=document.getElementById('tname').value||"Trainee";
-  const paceWord = avgDelta>0.5?`${avgDelta.toFixed(1)} wks ahead of benchmark`
-    : avgDelta<-0.5?`${Math.abs(avgDelta).toFixed(1)} wks behind benchmark`:"on benchmark pace";
-
+function renderResult(name,cohort,ms,r){
+  const pace=r.avgDelta>0.5?`${r.avgDelta.toFixed(1)} wks ahead of benchmark`
+    :r.avgDelta<-0.5?`${Math.abs(r.avgDelta).toFixed(1)} wks behind benchmark`:"on benchmark pace";
+  const tag=r.band==="Proficient"?"At or ahead of pace with strong quality. Ready to run independently."
+    :r.band==="Developing"?"Progressing on curve. Close gaps and reassess in 2–3 weeks."
+    :"Behind pace or quality is soft. Build a targeted ramp plan before added autonomy.";
   const bar=(v,c)=>`<div class="bar-track"><div class="bar-fill" style="width:${Math.round(v)}%;background:${c}"></div></div>`;
-
-  // ramp visual
   let ramp='';
-  MILES.forEach(m=>{
-    const v=parseFloat(document.getElementById('m_'+m.key).value);
-    let dot,txt;
-    if(isNaN(v)||v<=0){dot="var(--line)";txt=`not yet · bench wk ${m.bench}`;}
+  MILES.forEach(m=>{const v=ms[m.key];let dot,txt;
+    if(!v){dot="var(--line)";txt=`— · bench ${m.bench}`;}
     else if(v<=m.bench){dot="var(--green)";txt=`wk ${v} · ${m.bench-v>0?(m.bench-v)+' early':'on time'}`;}
     else if(v<=m.bench*1.25){dot="var(--amber)";txt=`wk ${v} · ${v-m.bench} late`;}
     else{dot="var(--red)";txt=`wk ${v} · ${v-m.bench} late`;}
     ramp+=`<div class="ramp-row"><span class="ramp-dot" style="background:${dot}"></span>
-      <span style="flex:1">${m.name}</span><span class="ramp-d">${txt}</span></div>`;
-  });
-
-  document.getElementById('out').style.display='block';
+      <span style="flex:1">${m.name}</span><span class="ramp-d">${txt}</span></div>`;});
   document.getElementById('out').innerHTML=`
-    <div class="score-card" style="background:${col}">
-      <div class="score-num">${composite}</div>
-      <div class="score-lab">${band}</div>
+    <div class="score-card" style="background:${r.col}">
+      <div class="score-who">${name}${cohort?' · '+cohort:''}</div>
+      <div class="score-num">${r.composite}</div>
+      <div class="score-lab">${r.band} · ${pace}</div>
       <div class="score-tag">${tag}</div>
     </div>
     <div class="panel">
-      <h2>${name} · ${paceWord}</h2>
-      <div class="metric"><span>Ramp velocity <b>(60%)</b></span><span>${Math.round(velocity)}/100</span></div>
-      ${bar(velocity,'var(--signal)')}
-      <div class="metric" style="margin-top:14px"><span>Quality signals <b>(40%)</b></span><span>${Math.round(quality)}/100</span></div>
-      ${bar(quality,'var(--ink)')}
-      <div class="metric" style="margin-top:14px"><span>Milestones reached</span>
-        <span class="pill" style="background:${col}">${reached} / ${MILES.length}</span></div>
+      <h2>${name}</h2>
+      <div class="metric"><span>Ramp velocity <b>(60%)</b></span><span>${r.velocity}/100</span></div>${bar(r.velocity,'var(--signal)')}
+      <div class="metric" style="margin-top:13px"><span>Quality signals <b>(40%)</b></span><span>${r.quality}/100</span></div>${bar(r.quality,'var(--ink)')}
+      <div class="metric" style="margin-top:13px"><span>Milestones reached</span>
+        <span class="pill" style="background:${r.col}">${r.reached} / ${MILES.length}</span></div>
     </div>
-    <div class="panel">
-      <h2>Milestone ramp</h2>
-      <div class="ramp">${ramp}</div>
+    <div class="panel"><h2>Milestone ramp</h2>${ramp}</div>
+    <div class="btnrow">
+      <button class="btn alt sm" onclick="exportOneCSV('${encodeURIComponent(name)}')">Export · CSV</button>
+      <button class="btn alt sm" onclick="exportOnePDF('${encodeURIComponent(name)}')">Export · PDF</button>
     </div>`;
   document.getElementById('out').scrollIntoView({behavior:'smooth',block:'start'});
 }
+
+/* ---------------- teams ---------------- */
+let curSrc='workday';
+function openCreate(){document.getElementById('createModal').classList.add('on');document.getElementById('createMsg').textContent='';}
+function closeCreate(){document.getElementById('createModal').classList.remove('on');}
+function pickSrc(el){document.querySelectorAll('.src').forEach(s=>s.classList.remove('on'));el.classList.add('on');curSrc=el.dataset.src;}
+
+async function createTeam(){
+  const name=document.getElementById('newTeamName').value.trim();
+  if(!name){document.getElementById('createMsg').textContent='Enter a team name.';return;}
+  const fields=['name','id'];
+  [['f_start','start'],['f_role','role'],['f_mgr','mgr'],['f_cert','cert'],['f_quota','quota']]
+    .forEach(([id,k])=>{if(document.getElementById(id).checked)fields.push(k);});
+  let members=[];
+  if(curSrc==='manual'){members=[];}
+  else{
+    document.getElementById('createMsg').textContent='Pulling roster from '+curSrc+'…';
+    members=await pullRoster(curSrc,fields);
+  }
+  DB.teams.push({id:uid(),name,source:curSrc,fields,members,created:new Date().toISOString()});
+  DB.save(); closeCreate(); show('teams');
+}
+
+// Calls serverless stub; falls back to mock so the demo works offline.
+async function pullRoster(source,fields){
+  try{
+    const res=await fetch('/api/roster',{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({source,fields})});
+    if(res.ok){const d=await res.json(); if(d.members) return d.members;}
+  }catch(e){}
+  // mock fallback
+  const names=["Aarav Shah","Priya Menon","Diego Torres","Sara Khan","Liam Chen","Maya Iyer","Noah Park","Zoe Alvarez"];
+  return names.map((n,i)=>({id:uid(),name:n,empId:"EMP-"+(2300+i*7),
+    start:"W"+(8+i)+" 2026",role:"SDR",mgr:"R. Banerjee"}));
+}
+
+function renderTeams(){
+  const el=document.getElementById('teamList');
+  if(!DB.teams.length){el.innerHTML='<div class="empty">No teams yet. Create one to pull a roster.</div>';return;}
+  el.innerHTML=DB.teams.map(t=>{
+    const assessed=DB.assess.filter(a=>a.teamId===t.id).length;
+    return `<div class="panel" style="cursor:pointer" onclick="openTeam('${t.id}')">
+      <div style="display:flex;justify-content:space-between;align-items:center">
+        <div><div style="font-family:var(--disp);font-weight:700;font-size:17px">${t.name}</div>
+          <div class="help" style="margin-top:2px">${t.members.length} members · ${assessed} assessed · via ${t.source}</div></div>
+        <span class="tag">open →</span></div></div>`;}).join('');
+}
+function openTeam(id){
+  const t=DB.teams.find(x=>x.id===id);
+  const rows=t.members.map(m=>{
+    const a=DB.assess.filter(x=>x.teamId===id&&x.name.startsWith(m.name)).slice(-1)[0];
+    const c=a?bandColorHex[a.result.band]:"#c4bca5";
+    return `<tr><td><span class="dot" style="background:${c}"></span>${m.name}</td>
+      <td>${m.empId}</td><td>${a?a.result.composite:'—'}</td><td>${a?a.result.band:'not assessed'}</td></tr>`;}).join('');
+  document.getElementById('teamModalBody').innerHTML=`
+    <h3>${t.name}</h3><p class="help" style="margin-top:0">${t.members.length} members · source: ${t.source}</p>
+    <div style="overflow:auto"><table><thead><tr><th>Name</th><th>ID</th><th>Score</th><th>Status</th></tr></thead>
+      <tbody>${rows||'<tr><td colspan=4 class=empty>No members</td></tr>'}</tbody></table></div>
+    <div class="btnrow" style="margin-top:14px">
+      <button class="btn alt sm" onclick="exportTeamCSV('${id}')">Export team · CSV</button>
+      <button class="btn alt sm" onclick="exportTeamPDF('${id}')">Export team · PDF</button>
+      <button class="btn alt sm" onclick="closeTeam()">Close</button></div>`;
+  document.getElementById('teamModal').classList.add('on');
+}
+function closeTeam(){document.getElementById('teamModal').classList.remove('on');}
+
+/* ---------------- dashboard ---------------- */
+function renderDash(){
+  const latest=latestPerPerson();
+  const tot=latest.length;
+  const prof=latest.filter(a=>a.result.band==="Proficient").length;
+  const dev=latest.filter(a=>a.result.band==="Developing").length;
+  const lag=latest.filter(a=>a.result.band==="Lagging").length;
+  const avg=tot?Math.round(latest.reduce((s,a)=>s+a.result.composite,0)/tot):0;
+  document.getElementById('dashStats').innerHTML=`
+    <div class="stat"><div class="stat-n">${DB.teams.length}</div><div class="stat-l">Teams</div></div>
+    <div class="stat"><div class="stat-n">${tot}</div><div class="stat-l">Assessed</div></div>
+    <div class="stat"><div class="stat-n">${avg}</div><div class="stat-l">Avg score</div></div>
+    <div class="stat"><div class="stat-n">${prof}</div><div class="stat-l">Proficient</div></div>`;
+  const totalMembers=DB.teams.reduce((s,t)=>s+t.members.length,0);
+  const na=Math.max(0,totalMembers-tot);
+  const seg=[[prof,'var(--green)'],[dev,'var(--amber)'],[lag,'var(--red)'],[na,'var(--line)']];
+  const sum=seg.reduce((s,x)=>s+x[0],0)||1;
+  document.getElementById('dashSeg').innerHTML=seg.map(([n,c])=>
+    n?`<div style="background:${c};width:${n/sum*100}%">${n}</div>`:'').join('')||'<div style="background:var(--line);width:100%;color:var(--muted)">no data</div>';
+  document.getElementById('dashTeams').innerHTML=DB.teams.length?
+    DB.teams.map(t=>{const la=DB.assess.filter(a=>a.teamId===t.id);
+      const av=la.length?Math.round(la.reduce((s,a)=>s+a.result.composite,0)/la.length):0;
+      return `<div class="metric"><span>${t.name}</span><span>${la.length}/${t.members.length} assessed · avg ${av||'—'}</span></div>`;}).join('')
+    :'<div class="empty">No teams yet.</div>';
+}
+function latestPerPerson(){
+  const map={}; DB.assess.forEach(a=>{map[a.teamId+'|'+a.name]=a;}); return Object.values(map);
+}
+
+/* ---------------- reports ---------------- */
+function renderReports(){
+  const a=latestPerPerson();
+  if(!a.length){document.getElementById('repTable').innerHTML='<div class="empty">No assessments saved yet.</div>';return;}
+  const rows=a.sort((x,y)=>y.result.composite-x.result.composite).map(r=>{
+    const t=DB.teams.find(x=>x.id===r.teamId);
+    return `<tr><td><span class="dot" style="background:${bandColorHex[r.result.band]}"></span>${r.name}</td>
+      <td>${t?t.name:'—'}</td><td>${r.result.composite}</td><td>${r.result.band}</td>
+      <td>${new Date(r.date).toLocaleDateString()}</td></tr>`;}).join('');
+  document.getElementById('repTable').innerHTML=`<div style="overflow:auto"><table>
+    <thead><tr><th>Trainee</th><th>Team</th><th>Score</th><th>Status</th><th>Date</th></tr></thead>
+    <tbody>${rows}</tbody></table></div>`;
+}
+
+/* ---------------- export: CSV ---------------- */
+function dl(name,content,type){const b=new Blob([content],{type});const u=URL.createObjectURL(b);
+  const a=document.createElement('a');a.href=u;a.download=name;a.click();URL.revokeObjectURL(u);}
+function csvRow(arr){return arr.map(v=>`"${String(v??'').replace(/"/g,'""')}"`).join(',');}
+function recToRow(r){const t=DB.teams.find(x=>x.id===r.teamId);
+  return [r.name,t?t.name:'',r.cohort||'',r.result.composite,r.result.band,r.result.velocity,r.result.quality,
+    r.result.reached+'/'+MILES.length,...MILES.map(m=>r.milestones[m.key]||''),new Date(r.date).toLocaleDateString()];}
+const CSV_HEAD=["Trainee","Team","Cohort","Score","Status","Velocity","Quality","Milestones",...MILES.map(m=>m.name),"Date"];
+function exportRosterCSV(){const rows=latestPerPerson().map(recToRow);
+  dl('rampiq_all.csv',[csvRow(CSV_HEAD),...rows.map(csvRow)].join('\n'),'text/csv');}
+function exportTeamCSV(id){const rows=DB.assess.filter(a=>a.teamId===id).map(recToRow);
+  dl('rampiq_team.csv',[csvRow(CSV_HEAD),...rows.map(csvRow)].join('\n'),'text/csv');}
+function exportOneCSV(enc){const name=decodeURIComponent(enc);const r=latestPerPerson().find(x=>x.name===name);
+  if(r)dl('rampiq_'+name.replace(/\W+/g,'_')+'.csv',[csvRow(CSV_HEAD),csvRow(recToRow(r))].join('\n'),'text/csv');}
+
+/* ---------------- export: PDF ---------------- */
+function pdfDoc(){const {jsPDF}=window.jspdf;return new jsPDF({unit:'pt',format:'a4'});}
+function pdfHeader(doc,title){doc.setFillColor(19,38,31);doc.rect(0,0,595,60,'F');
+  doc.setTextColor(240,236,225);doc.setFont('times','bold');doc.setFontSize(20);doc.text('RampIQ',40,38);
+  doc.setFont('helvetica','normal');doc.setFontSize(10);doc.setTextColor(180,170,150);doc.text(title,40,52);
+  doc.setTextColor(19,38,31);}
+function exportOnePDF(enc){const name=decodeURIComponent(enc);const r=latestPerPerson().find(x=>x.name===name);
+  if(!r)return; const doc=pdfDoc();pdfHeader(doc,'Speed to Proficiency — Individual Report');
+  let y=95;doc.setFont('times','bold');doc.setFontSize(22);doc.text(r.name,40,y);
+  y+=18;doc.setFont('helvetica','normal');doc.setFontSize(11);doc.setTextColor(90,107,98);
+  const t=DB.teams.find(x=>x.id===r.teamId);doc.text(`${t?t.name+' · ':''}${r.cohort||''}`,40,y);
+  y+=34;const c=hexToRgb(bandColorHex[r.result.band]);doc.setFillColor(...c);doc.roundedRect(40,y,515,70,5,5,'F');
+  doc.setTextColor(255,255,255);doc.setFont('times','bold');doc.setFontSize(40);doc.text(String(r.result.composite),60,y+50);
+  doc.setFont('helvetica','bold');doc.setFontSize(13);doc.text(r.result.band.toUpperCase(),130,y+38);
+  doc.setFont('helvetica','normal');doc.setFontSize(10);
+  doc.text(`Velocity ${r.result.velocity}/100   ·   Quality ${r.result.quality}/100   ·   ${r.result.reached}/${MILES.length} milestones`,130,y+55);
+  y+=100;doc.setTextColor(19,38,31);doc.setFont('helvetica','bold');doc.setFontSize(11);doc.text('Milestone ramp',40,y);y+=8;
+  doc.setFont('helvetica','normal');doc.setFontSize(10);
+  MILES.forEach(m=>{y+=18;const v=r.milestones[m.key];
+    const st=!v?'not reached':v<=m.bench?`wk ${v} · on/ahead`:`wk ${v} · ${v-m.bench} late`;
+    doc.setTextColor(90,107,98);doc.text(m.name,50,y);doc.text(`bench wk ${m.bench}`,330,y);
+    doc.setTextColor(19,38,31);doc.text(st,430,y);});
+  doc.save('rampiq_'+name.replace(/\W+/g,'_')+'.pdf');}
+function exportRosterPDF(){rosterPDF(latestPerPerson(),'All teams','rampiq_all.pdf');}
+function exportTeamPDF(id){const t=DB.teams.find(x=>x.id===id);
+  rosterPDF(DB.assess.filter(a=>a.teamId===id),t.name,'rampiq_team.pdf');}
+function rosterPDF(recs,title,fname){const doc=pdfDoc();pdfHeader(doc,'Roster Report — '+title);
+  let y=90;doc.setFont('helvetica','bold');doc.setFontSize(10);doc.setTextColor(90,107,98);
+  doc.text('TRAINEE',40,y);doc.text('SCORE',330,y);doc.text('STATUS',400,y);doc.text('VEL/QUAL',490,y);
+  y+=6;doc.setDrawColor(196,188,165);doc.line(40,y,555,y);
+  doc.setFont('helvetica','normal');doc.setTextColor(19,38,31);
+  recs.sort((a,b)=>b.result.composite-a.result.composite).forEach(r=>{y+=20;
+    if(y>800){doc.addPage();y=60;}
+    const c=hexToRgb(bandColorHex[r.result.band]);doc.setFillColor(...c);doc.circle(44,y-3,3,'F');
+    doc.text(r.name,54,y);doc.text(String(r.result.composite),330,y);doc.text(r.result.band,400,y);
+    doc.text(`${r.result.velocity}/${r.result.quality}`,490,y);});
+  doc.save(fname);}
+function hexToRgb(h){const n=parseInt(h.slice(1),16);return[n>>16,(n>>8)&255,n&255];}
+
+/* ---------------- init ---------------- */
+renderDash();
 </script>
 </body>
 </html>
