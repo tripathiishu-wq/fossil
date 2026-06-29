@@ -751,10 +751,12 @@ async function createTeam(){
   const name=newTeamName.value.trim();if(!name)return tmsg('Enter a team name.');
   const fields=['name','id'];[['f_start','start'],['f_role','role'],['f_mgr','mgr']].forEach(([id,k])=>{if(document.getElementById(id).checked)fields.push(k);});
   const btn=document.getElementById('btnCreate');btn.disabled=true;
+  const _t=btn.textContent;btn.textContent='Creating…';
+  tmsg('Creating team…',true);
   const src=pickedConn==='manual'?'manual':(CONNS.find(c=>c.id===pickedConn)?.kind||'manual');
   const orgId=CUR_ORG?CUR_ORG.id:null;
   const {data:team,error}=await sb.from('teams').insert({owner_id:session.user.id,org_id:orgId,name,source:src,fields,kind:NEW_TEAM_KIND}).select().single();
-  if(error){tmsg('Create failed: '+error.message);btn.disabled=false;return;}
+  if(error){tmsg('Create failed: '+error.message);btn.disabled=false;btn.textContent=_t;return;}
   TEAMS.push(team);
 
   if(pickedConn==='manual'){
@@ -778,9 +780,9 @@ async function createTeam(){
         job_title:m.job_title||m.role||null,manager:m.manager||null,manager_id:m.manager_id||null,
         wd_worker_id:m.wd_worker_id||null,department:m.department||null,cost_center:m.cost_center||null}));
       if(rows.length){const {data:ins}=await sb.from('members').insert(rows).select();MEMBERS.push(...(ins||[]));}
-    }catch(e){tmsg('Team made, but roster pull failed: '+e.message);btn.disabled=false;setTimeout(()=>{closeCreate();show('teams');},1400);return;}
+    }catch(e){tmsg('Team made, but roster pull failed: '+e.message);btn.disabled=false;btn.textContent=_t;setTimeout(()=>{closeCreate();show('teams');},1400);return;}
   }
-  btn.disabled=false;closeCreate();show('teams');
+  btn.disabled=false;btn.textContent=_t;closeCreate();show('teams');
 }
 function renderTeams(){
   const el=document.getElementById('teamList');
@@ -892,8 +894,13 @@ function renderDash(){
   const na=Math.max(0,membersInScope-tot);
   const seg=[[prof,'var(--green)'],[dev,'var(--amber)'],[lag,'var(--red)'],[na,'var(--line)']];
   const sum=seg.reduce((s,x)=>s+x[0],0)||1;
-  document.getElementById('dashSeg').innerHTML=seg.map(([n,c])=>n?`<div style="background:${c};width:${n/sum*100}%">${n}</div>`:'').join('')
-    ||'<div style="background:var(--line);width:100%;color:var(--muted)">no data in this view</div>';
+  const segEl=document.getElementById('dashSeg');
+  if(tot===0){
+    // nothing assessed yet — show an intentional empty state, not a lone grey block
+    segEl.innerHTML=`<div style="background:transparent;border:1px dashed var(--line2);width:100%;color:var(--muted);font-family:var(--mono);font-size:11px;letter-spacing:.05em">${membersInScope} member${membersInScope===1?'':'s'} · none assessed yet</div>`;
+  }else{
+    segEl.innerHTML=seg.map(([n,c])=>n?`<div style="background:${c};width:${n/sum*100}%">${n/sum>=0.08?n:''}</div>`:'').join('');
+  }
   const teamsToShow=TEAMS.filter(t=>scope.teamIds.includes(t.id));
   document.getElementById('dashTeams').innerHTML=teamsToShow.length?teamsToShow.map(t=>{const la=ASSESS.filter(a=>a.team_id===t.id);
     const av=la.length?Math.round(la.reduce((s,a)=>s+a.result.composite,0)/la.length):0;
