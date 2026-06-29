@@ -325,8 +325,11 @@ async function signOut(){await sb.auth.signOut();location.reload();}
 // Find an org by name or create it; ensure the user is a member. Sets CUR_ORG + display.
 async function ensureOrg(name){
   // already a member of something?
-  let {data:mine}=await sb.from('org_members').select('org_id,organizations(id,name)').limit(1);
-  if(mine&&mine.length&&mine[0].organizations){setOrg(mine[0].organizations.id,mine[0].organizations.name);return;}
+  let {data:mine}=await sb.from('org_members').select('org_id').limit(1);
+  if(mine&&mine.length){
+    const {data:org}=await sb.from('organizations').select('id,name').eq('id',mine[0].org_id).single();
+    if(org){setOrg(org.id,org.name);return;}
+  }
   // create the org (RLS: insert allowed because created_by = me)
   const {data:created,error}=await sb.from('organizations').insert({name,created_by:session.user.id}).select().single();
   if(error){console.warn('org create',error);return;}
@@ -345,9 +348,14 @@ function onAuthed(){
   loadAll();
 }
 async function loadAll(){
-  // resolve current org membership
-  const {data:mem}=await sb.from('org_members').select('org_id,organizations(id,name)').limit(1);
-  if(mem&&mem.length&&mem[0].organizations){setOrg(mem[0].organizations.id,mem[0].organizations.name);}
+  // resolve current org membership — two simple steps (no fragile join)
+  const {data:mem,error:memErr}=await sb.from('org_members').select('org_id').limit(1);
+  if(memErr)console.warn('org_members read',memErr);
+  if(mem&&mem.length){
+    const {data:org,error:orgErr}=await sb.from('organizations').select('id,name').eq('id',mem[0].org_id).single();
+    if(orgErr)console.warn('organizations read',orgErr);
+    if(org)setOrg(org.id,org.name);
+  }
   const [t,m,a,c]=await Promise.all([
     sb.from('teams').select('*').order('created_at'),
     sb.from('members').select('*'),
