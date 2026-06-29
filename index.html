@@ -115,7 +115,10 @@
 
 <!-- ============ SHELL ============ -->
 <div class="topbar" style="display:none" id="shell">
-  <div class="brand">Ramp<span>IQ</span></div>
+  <div style="display:flex;flex-direction:column;line-height:1">
+    <div class="brand">Ramp<span>IQ</span></div>
+    <div id="whoOrg" style="font-family:var(--mono);font-size:10px;letter-spacing:.16em;text-transform:uppercase;color:var(--signal);margin-top:2px"></div>
+  </div>
   <div class="nav">
     <button data-v="dash" class="on">Dashboard</button>
     <button data-v="teams">Teams</button>
@@ -124,7 +127,7 @@
     <button data-v="connect">Connections</button>
     <button data-v="platform" id="navPlatform" style="display:none;color:var(--signal);opacity:1">Platform</button>
   </div>
-  <div class="who"><span id="whoOrg" class="tag" style="margin-right:8px"></span><span id="whoEmail"></span><button onclick="signOut()">Sign out</button></div>
+  <div class="who"><span id="whoEmail"></span><button onclick="signOut()">Sign out</button></div>
 </div>
 
 <div id="appBody" style="display:none">
@@ -319,24 +322,19 @@ async function signUp(){
 }
 async function signOut(){await sb.auth.signOut();location.reload();}
 
-// Find an org by name or create it; ensure the user is a member.
+// Find an org by name or create it; ensure the user is a member. Sets CUR_ORG + display.
 async function ensureOrg(name){
   // already a member of something?
   let {data:mine}=await sb.from('org_members').select('org_id,organizations(id,name)').limit(1);
-  if(mine&&mine.length){CUR_ORG={id:mine[0].organizations.id,name:mine[0].organizations.name};return;}
-  // try to find an existing org with this name (may be blocked by RLS if not a member; that's fine)
-  let {data:found}=await sb.from('organizations').select('*').eq('name',name).limit(1);
-  let org=found&&found[0];
-  if(!org){
-    const {data:created,error}=await sb.from('organizations').insert({name,created_by:session.user.id}).select().single();
-    if(error){console.warn(error);return;}
-    org=created;
-    await sb.from('org_members').insert({org_id:org.id,user_id:session.user.id,role:'admin'});
-  }else{
-    await sb.from('org_members').insert({org_id:org.id,user_id:session.user.id,role:'trainer'});
-  }
-  CUR_ORG={id:org.id,name:org.name};
+  if(mine&&mine.length&&mine[0].organizations){setOrg(mine[0].organizations.id,mine[0].organizations.name);return;}
+  // create the org (RLS: insert allowed because created_by = me)
+  const {data:created,error}=await sb.from('organizations').insert({name,created_by:session.user.id}).select().single();
+  if(error){console.warn('org create',error);return;}
+  const {error:e2}=await sb.from('org_members').insert({org_id:created.id,user_id:session.user.id,role:'admin'});
+  if(e2)console.warn('membership',e2);
+  setOrg(created.id,created.name);
 }
+function setOrg(id,name){CUR_ORG={id,name};const el=document.getElementById('whoOrg');if(el)el.textContent=name||'';}
 
 function onAuthed(){
   document.getElementById('auth').style.display='none';
@@ -349,8 +347,7 @@ function onAuthed(){
 async function loadAll(){
   // resolve current org membership
   const {data:mem}=await sb.from('org_members').select('org_id,organizations(id,name)').limit(1);
-  if(mem&&mem.length){CUR_ORG={id:mem[0].organizations.id,name:mem[0].organizations.name};
-    document.getElementById('whoOrg').textContent=CUR_ORG.name;}
+  if(mem&&mem.length&&mem[0].organizations){setOrg(mem[0].organizations.id,mem[0].organizations.name);}
   const [t,m,a,c]=await Promise.all([
     sb.from('teams').select('*').order('created_at'),
     sb.from('members').select('*'),
