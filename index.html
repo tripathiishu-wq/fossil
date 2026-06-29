@@ -583,7 +583,12 @@ async function run(){
   }
   const {data,error}=await sb.from('assessments').insert(rec).select().single();
   if(error){alert("Save failed: "+error.message);return;}
+  if(!data){alert("Save returned no row — likely a permissions issue. Tell Ishan: assessment insert returned null.");return;}
   ASSESS.unshift(data);
+  // re-pull from DB so dashboard/reports reflect the true saved state (no local drift)
+  const {data:fresh}=await sb.from('assessments').select('*').order('created_at',{ascending:false});
+  if(fresh)ASSESS=fresh;
+  renderDash();
 }
 function renderResult(name,cohort,ms,r){
   const pace=r.avgDelta>0.5?`${r.avgDelta.toFixed(1)} wks ahead`:r.avgDelta<-0.5?`${Math.abs(r.avgDelta).toFixed(1)} wks behind`:"on pace";
