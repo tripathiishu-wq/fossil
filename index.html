@@ -348,14 +348,24 @@ function onAuthed(){
   loadAll();
 }
 async function loadAll(){
-  // resolve current org membership — two simple steps (no fragile join)
+  // resolve current org — try membership, then fall back to created_by
+  let orgRow=null;
   const {data:mem,error:memErr}=await sb.from('org_members').select('org_id').limit(1);
   if(memErr)console.warn('org_members read',memErr);
   if(mem&&mem.length){
-    const {data:org,error:orgErr}=await sb.from('organizations').select('id,name').eq('id',mem[0].org_id).single();
+    const {data:org,error:orgErr}=await sb.from('organizations').select('id,name').eq('id',mem[0].org_id).maybeSingle();
     if(orgErr)console.warn('organizations read',orgErr);
-    if(org)setOrg(org.id,org.name);
+    if(org)orgRow=org;
   }
+  if(!orgRow){
+    // fallback: any org this user created (RLS: insert policy proves ownership)
+    const {data:owned,error:ownErr}=await sb.from('organizations').select('id,name').eq('created_by',session.user.id).limit(1);
+    if(ownErr)console.warn('owned org read',ownErr);
+    if(owned&&owned.length)orgRow=owned[0];
+  }
+  if(orgRow)setOrg(orgRow.id,orgRow.name);
+  else console.warn('NO ORG RESOLVED for',session.user.email);
+
   const [t,m,a,c]=await Promise.all([
     sb.from('teams').select('*').order('created_at'),
     sb.from('members').select('*'),
