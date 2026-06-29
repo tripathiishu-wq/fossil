@@ -8,87 +8,142 @@
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <style>
   :root{
-    --ink:#13261f; --paper:#f0ece1; --paper2:#e6e0d1; --card:#fbf9f3;
-    --line:#c4bca5; --signal:#d4602a; --green:#2f6b4f; --amber:#c8901f; --red:#b33a2e;
-    --muted:#5a6b62;
-    --disp:"Georgia","Times New Roman",serif;
+    /* DARK COMMAND-CENTER BASE */
+    --bg:#0a0c10; --bg2:#11141b; --card:#161a23; --card2:#1c212c;
+    --line:#262d3a; --line2:#323a4a;
+    --text:#e8ecf4; --muted:#8b94a7; --muted2:#5f6878;
+    /* accent — overridden by theme switcher */
+    --accent:#00e5a0; --accent-dim:#0a3d2e; --accent-text:#0a0c10;
+    --green:#2dd4a8; --amber:#f5b544; --red:#ff5a5f;
+    /* legacy aliases so existing classes keep working */
+    --ink:var(--bg2); --paper:var(--bg); --paper2:var(--card); --signal:var(--accent);
+    --disp:"SF Pro Display",-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
     --body:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
-    --mono:"SF Mono",ui-monospace,"Roboto Mono",monospace;
+    --mono:"SF Mono",ui-monospace,"Roboto Mono","JetBrains Mono",monospace;
   }
+  [data-theme="blue"]{   --accent:#3b82f6; --accent-dim:#16294d; --accent-text:#fff; }
+  [data-theme="lime"]{   --accent:#a3e635; --accent-dim:#2a3a10; --accent-text:#0a0c10; }
+  [data-theme="violet"]{ --accent:#a855f7; --accent-dim:#2e1b47; --accent-text:#fff; }
+  [data-theme="orange"]{ --accent:#ff6b35; --accent-dim:#3d1c0e; --accent-text:#fff; }
+  [data-theme="mint"]{   --accent:#00e5a0; --accent-dim:#0a3d2e; --accent-text:#0a0c10; }
+
   *{box-sizing:border-box;-webkit-tap-highlight-color:transparent;}
-  body{margin:0;background:var(--paper);color:var(--ink);font-family:var(--body);line-height:1.45;}
-  .topbar{position:sticky;top:0;z-index:30;background:var(--ink);color:var(--paper);
-    display:flex;align-items:center;gap:14px;padding:0 16px;height:54px;}
-  .brand{font-family:var(--disp);font-weight:700;font-size:19px;}.brand span{color:var(--signal);}
-  .nav{display:flex;gap:2px;margin-left:6px;flex:1;overflow-x:auto;}
-  .nav button{background:none;border:none;color:var(--paper);opacity:.6;font-family:var(--mono);
-    font-size:11px;letter-spacing:.1em;text-transform:uppercase;padding:8px 10px;cursor:pointer;border-radius:4px;white-space:nowrap;}
-  .nav button.on{opacity:1;background:rgba(255,255,255,.1);}
-  .who{font-family:var(--mono);font-size:11px;opacity:.8;display:flex;align-items:center;gap:8px;}
-  .who button{background:none;border:1px solid rgba(255,255,255,.3);color:var(--paper);font-size:10px;
-    padding:4px 8px;border-radius:4px;cursor:pointer;font-family:var(--mono);}
-  .wrap{max-width:880px;margin:0 auto;padding:22px 18px 80px;}
-  .view{display:none;}.view.on{display:block;}
-  h1{font-family:var(--disp);font-weight:700;font-size:27px;margin:0 0 4px;letter-spacing:-.01em;}
-  .lede{font-size:14px;color:var(--muted);font-style:italic;margin:0 0 18px;max-width:560px;}
-  .panel{background:var(--paper2);border:1px solid var(--line);border-radius:5px;padding:16px;margin:14px 0;}
-  .panel h2{font-family:var(--mono);font-size:11px;letter-spacing:.18em;text-transform:uppercase;color:var(--muted);margin:0 0 13px;font-weight:600;}
-  label{display:block;font-size:11px;font-weight:600;letter-spacing:.05em;margin:0 0 5px;text-transform:uppercase;color:var(--muted);}
-  input,select{width:100%;padding:10px 11px;border:1px solid var(--line);background:var(--card);border-radius:3px;font-size:15px;font-family:var(--body);color:var(--ink);}
-  .row{display:flex;gap:12px;flex-wrap:wrap;}.row>div{flex:1;min-width:130px;}
-  .btn{background:var(--ink);color:var(--paper);border:none;padding:13px 18px;font-family:var(--mono);font-size:12px;letter-spacing:.14em;text-transform:uppercase;border-radius:4px;cursor:pointer;}
-  .btn:active{transform:translateY(1px);}.btn:disabled{opacity:.5;cursor:default;}
-  .btn.alt{background:var(--card);color:var(--ink);border:1px solid var(--line);}
-  .btn.sig{background:var(--signal);}.btn.sm{padding:8px 12px;font-size:11px;}
-  .btnrow{display:flex;gap:9px;flex-wrap:wrap;margin-top:10px;}
-  .mile{border-top:1px solid var(--line);padding:13px 0;}.mile:first-child{border-top:none;}
+  body{margin:0;background:var(--bg);color:var(--text);font-family:var(--body);line-height:1.5;
+    background-image:radial-gradient(circle at 50% -20%, rgba(255,255,255,.03), transparent 60%);
+    min-height:100vh;}
+  ::selection{background:var(--accent);color:var(--accent-text);}
+
+  .topbar{position:sticky;top:0;z-index:30;background:rgba(10,12,16,.85);backdrop-filter:blur(12px);
+    border-bottom:1px solid var(--line);display:flex;align-items:center;gap:14px;padding:0 20px;height:58px;}
+  .brand{font-family:var(--disp);font-weight:800;font-size:20px;letter-spacing:-.02em;color:var(--text);}
+  .brand span{color:var(--accent);}
+  .nav{display:flex;gap:2px;margin-left:10px;flex:1;overflow-x:auto;}
+  .nav button{background:none;border:none;color:var(--muted);font-family:var(--mono);
+    font-size:11px;letter-spacing:.08em;text-transform:uppercase;padding:8px 13px;cursor:pointer;
+    border-radius:6px;white-space:nowrap;font-weight:600;transition:all .15s;}
+  .nav button:hover{color:var(--text);background:var(--card);}
+  .nav button.on{color:var(--accent-text);background:var(--accent);}
+  .who{font-family:var(--mono);font-size:11px;color:var(--muted);display:flex;align-items:center;gap:10px;}
+  .who button{background:var(--card);border:1px solid var(--line);color:var(--text);font-size:10px;
+    padding:6px 11px;border-radius:6px;cursor:pointer;font-family:var(--mono);font-weight:600;transition:all .15s;}
+  .who button:hover{border-color:var(--accent);color:var(--accent);}
+
+  .wrap{max-width:1080px;margin:0 auto;padding:30px 22px 90px;}
+  .view{display:none;}.view.on{display:block;animation:fade .3s ease;}
+  @keyframes fade{from{opacity:0;transform:translateY(6px);}to{opacity:1;transform:none;}}
+  h1{font-family:var(--disp);font-weight:800;font-size:34px;margin:0 0 4px;letter-spacing:-.03em;color:var(--text);}
+  .lede{font-size:14px;color:var(--muted);margin:0 0 24px;max-width:600px;}
+
+  .panel{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:20px;margin:16px 0;}
+  .panel h2{font-family:var(--mono);font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--muted);margin:0 0 16px;font-weight:600;}
+  label{display:block;font-size:11px;font-weight:600;letter-spacing:.05em;margin:0 0 6px;text-transform:uppercase;color:var(--muted);}
+  input,select{width:100%;padding:11px 13px;border:1px solid var(--line);background:var(--bg2);border-radius:8px;
+    font-size:15px;font-family:var(--body);color:var(--text);transition:border .15s;}
+  input:focus,select:focus{outline:none;border-color:var(--accent);}
+  input::placeholder{color:var(--muted2);}
+  .row{display:flex;gap:14px;flex-wrap:wrap;}.row>div{flex:1;min-width:130px;}
+
+  .btn{background:var(--accent);color:var(--accent-text);border:none;padding:13px 20px;font-family:var(--mono);
+    font-size:12px;letter-spacing:.1em;text-transform:uppercase;border-radius:8px;cursor:pointer;font-weight:700;transition:all .15s;}
+  .btn:hover{filter:brightness(1.1);transform:translateY(-1px);}
+  .btn:active{transform:translateY(0);}.btn:disabled{opacity:.4;cursor:default;transform:none;}
+  .btn.alt{background:var(--card2);color:var(--text);border:1px solid var(--line2);}
+  .btn.alt:hover{border-color:var(--accent);color:var(--accent);filter:none;}
+  .btn.sig{background:var(--accent);}.btn.sm{padding:9px 13px;font-size:11px;}
+  .btnrow{display:flex;gap:10px;flex-wrap:wrap;margin-top:12px;}
+
+  .mile{border-top:1px solid var(--line);padding:14px 0;}.mile:first-child{border-top:none;}
   .mile-head{display:flex;justify-content:space-between;align-items:baseline;gap:8px;}
-  .mile-name{font-family:var(--disp);font-size:16px;font-weight:700;}
+  .mile-name{font-family:var(--disp);font-size:16px;font-weight:700;color:var(--text);}
   .mile-bench{font-family:var(--mono);font-size:11px;color:var(--muted);}
-  .mile-sub{font-size:12px;color:var(--muted);margin:2px 0 8px;}
-  .score-card{text-align:center;padding:24px 16px;border-radius:6px;color:#fff;margin:14px 0;}
-  .score-who{font-family:var(--mono);font-size:12px;letter-spacing:.18em;text-transform:uppercase;opacity:.9;margin-bottom:10px;}
-  .score-num{font-family:var(--disp);font-size:58px;line-height:1;font-weight:700;}
-  .score-lab{font-family:var(--mono);font-size:12px;letter-spacing:.18em;text-transform:uppercase;margin-top:8px;opacity:.92;}
-  .score-tag{font-size:13.5px;margin-top:11px;max-width:430px;margin:11px auto 0;}
-  .metric{display:flex;justify-content:space-between;align-items:center;padding:11px 0;border-top:1px solid var(--line);font-size:14px;}
+  .mile-sub{font-size:12px;color:var(--muted);margin:2px 0 9px;}
+
+  .score-card{text-align:center;padding:30px 18px;border-radius:14px;color:#fff;margin:16px 0;position:relative;overflow:hidden;}
+  .score-card::before{content:"";position:absolute;inset:0;background:radial-gradient(circle at 50% 0%,rgba(255,255,255,.15),transparent 70%);}
+  .score-who{font-family:var(--mono);font-size:12px;letter-spacing:.16em;text-transform:uppercase;opacity:.9;margin-bottom:12px;position:relative;}
+  .score-num{font-family:var(--disp);font-size:72px;line-height:1;font-weight:800;position:relative;letter-spacing:-.03em;}
+  .score-lab{font-family:var(--mono);font-size:12px;letter-spacing:.14em;text-transform:uppercase;margin-top:10px;opacity:.95;position:relative;}
+  .score-tag{font-size:13.5px;margin:13px auto 0;max-width:440px;position:relative;opacity:.95;}
+
+  .metric{display:flex;justify-content:space-between;align-items:center;padding:12px 0;border-top:1px solid var(--line);font-size:14px;color:var(--text);}
   .metric:first-child{border-top:none;}
-  .pill{font-family:var(--mono);font-size:10px;letter-spacing:.1em;text-transform:uppercase;padding:3px 9px;border-radius:20px;color:#fff;}
-  .bar-track{height:8px;background:var(--line);border-radius:6px;overflow:hidden;margin-top:6px;}
-  .bar-fill{height:100%;border-radius:6px;}
-  .ramp-row{display:flex;align-items:center;gap:10px;font-size:13px;padding:6px 0;}
+  .pill{font-family:var(--mono);font-size:10px;letter-spacing:.08em;text-transform:uppercase;padding:4px 10px;border-radius:20px;color:#fff;font-weight:600;}
+  .bar-track{height:8px;background:var(--bg2);border-radius:6px;overflow:hidden;margin-top:8px;}
+  .bar-fill{height:100%;border-radius:6px;transition:width .6s ease;}
+  .ramp-row{display:flex;align-items:center;gap:11px;font-size:13px;padding:7px 0;color:var(--text);}
   .ramp-dot{width:11px;height:11px;border-radius:50%;flex:none;}
-  .ramp-d{font-family:var(--mono);font-size:11px;color:var(--muted);width:70px;flex:none;text-align:right;}
+  .ramp-d{font-family:var(--mono);font-size:11px;color:var(--muted);width:74px;flex:none;text-align:right;}
+
   table{width:100%;border-collapse:collapse;font-size:13.5px;}
-  th{font-family:var(--mono);font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--muted);text-align:left;padding:8px 10px;border-bottom:2px solid var(--line);}
-  td{padding:10px;border-bottom:1px solid var(--line);}
-  .dot{display:inline-block;width:9px;height:9px;border-radius:50%;margin-right:6px;}
-  .empty{text-align:center;color:var(--muted);font-style:italic;padding:30px 10px;font-size:14px;}
-  .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;}
-  .stat{background:var(--card);border:1px solid var(--line);border-radius:5px;padding:15px;}
-  .stat-n{font-family:var(--disp);font-size:34px;font-weight:700;line-height:1;}
-  .stat-l{font-family:var(--mono);font-size:10px;letter-spacing:.12em;text-transform:uppercase;color:var(--muted);margin-top:7px;}
-  .seg{display:flex;height:30px;border-radius:5px;overflow:hidden;margin-top:6px;border:1px solid var(--line);}
-  .seg div{display:flex;align-items:center;justify-content:center;color:#fff;font-size:11px;font-family:var(--mono);}
-  .modal-bg{display:none;position:fixed;inset:0;background:rgba(19,38,31,.55);z-index:50;align-items:center;justify-content:center;padding:16px;}
+  th{font-family:var(--mono);font-size:10px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);text-align:left;padding:10px 12px;border-bottom:1px solid var(--line2);}
+  td{padding:12px;border-bottom:1px solid var(--line);color:var(--text);}
+  tr:hover td{background:var(--card2);}
+  .dot{display:inline-block;width:9px;height:9px;border-radius:50%;margin-right:7px;}
+  .empty{text-align:center;color:var(--muted);padding:40px 10px;font-size:14px;}
+
+  .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:14px;}
+  .stat{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:20px;position:relative;overflow:hidden;transition:border .15s;}
+  .stat:hover{border-color:var(--line2);}
+  .stat::after{content:"";position:absolute;top:0;left:0;width:3px;height:100%;background:var(--accent);opacity:.6;}
+  .stat-n{font-family:var(--disp);font-size:42px;font-weight:800;line-height:1;color:var(--text);letter-spacing:-.03em;}
+  .stat-l{font-family:var(--mono);font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--muted);margin-top:9px;}
+  .seg{display:flex;height:34px;border-radius:8px;overflow:hidden;margin-top:6px;border:1px solid var(--line);}
+  .seg div{display:flex;align-items:center;justify-content:center;color:#fff;font-size:11px;font-family:var(--mono);font-weight:600;}
+
+  .modal-bg{display:none;position:fixed;inset:0;background:rgba(5,7,10,.75);backdrop-filter:blur(4px);z-index:50;align-items:center;justify-content:center;padding:16px;}
   .modal-bg.on{display:flex;}
-  .modal{background:var(--paper);border-radius:7px;max-width:520px;width:100%;max-height:88vh;overflow:auto;padding:20px;}
-  .modal h3{font-family:var(--disp);margin:0 0 4px;font-size:20px;}
-  .chk{display:flex;align-items:center;gap:9px;padding:8px 0;border-bottom:1px solid var(--line);font-size:14px;}
-  .chk input{width:auto;}
-  .src{display:flex;gap:9px;align-items:center;background:var(--card);border:1px solid var(--line);border-radius:5px;padding:11px;margin:8px 0;cursor:pointer;}
-  .src.on{border-color:var(--signal);box-shadow:0 0 0 1px var(--signal);}
-  .src-ico{width:34px;height:34px;border-radius:6px;background:var(--ink);color:var(--paper);display:flex;align-items:center;justify-content:center;font-family:var(--mono);font-size:11px;font-weight:700;flex:none;}
-  .help{font-size:11px;color:var(--muted);font-style:italic;margin-top:5px;}
-  .tag{font-family:var(--mono);font-size:10px;letter-spacing:.08em;text-transform:uppercase;color:var(--signal);}
-  .msg{font-size:12px;margin-top:8px;padding:9px 11px;border-radius:4px;display:none;}
-  .msg.err{display:block;background:#f6e3e0;color:var(--red);border:1px solid var(--red);}
-  .msg.ok{display:block;background:#e2efe7;color:var(--green);border:1px solid var(--green);}
+  .modal{background:var(--card);border:1px solid var(--line2);border-radius:14px;max-width:540px;width:100%;max-height:88vh;overflow:auto;padding:24px;}
+  .modal h3{font-family:var(--disp);margin:0 0 4px;font-size:22px;font-weight:800;color:var(--text);letter-spacing:-.02em;}
+  .chk{display:flex;align-items:center;gap:10px;padding:9px 0;border-bottom:1px solid var(--line);font-size:14px;color:var(--text);}
+  .chk input{width:auto;accent-color:var(--accent);}
+  .src{display:flex;gap:11px;align-items:center;background:var(--bg2);border:1px solid var(--line);border-radius:10px;padding:13px;margin:9px 0;cursor:pointer;transition:all .15s;}
+  .src:hover{border-color:var(--line2);}
+  .src.on{border-color:var(--accent);box-shadow:0 0 0 1px var(--accent);}
+  .src-ico{width:36px;height:36px;border-radius:8px;background:var(--accent);color:var(--accent-text);display:flex;align-items:center;justify-content:center;font-family:var(--mono);font-size:11px;font-weight:800;flex:none;}
+  .help{font-size:11px;color:var(--muted);margin-top:6px;}
+  .tag{font-family:var(--mono);font-size:10px;letter-spacing:.06em;text-transform:uppercase;color:var(--accent);font-weight:600;}
+  .msg{font-size:12px;margin-top:10px;padding:10px 13px;border-radius:8px;display:none;}
+  .msg.err{display:block;background:var(--accent-dim);color:var(--red);border:1px solid var(--red);}
+  .msg.ok{display:block;background:var(--accent-dim);color:var(--accent);border:1px solid var(--accent);}
+
+  /* purview toggle */
+  .purview{display:inline-flex;gap:0;background:var(--bg2);border:1px solid var(--line);border-radius:8px;padding:3px;margin-bottom:18px;}
+  .purview button{background:none;border:none;color:var(--muted);font-family:var(--mono);font-size:11px;font-weight:600;
+    letter-spacing:.06em;text-transform:uppercase;padding:8px 16px;border-radius:6px;cursor:pointer;transition:all .15s;}
+  .purview button.on{background:var(--accent);color:var(--accent-text);}
+
+  /* theme switcher */
+  .themebar{display:flex;gap:7px;align-items:center;}
+  .swatch{width:18px;height:18px;border-radius:50%;cursor:pointer;border:2px solid transparent;transition:all .15s;}
+  .swatch:hover{transform:scale(1.15);}
+  .swatch.on{border-color:var(--text);}
+
   /* auth screen */
-  #auth{position:fixed;inset:0;background:var(--paper);z-index:100;display:flex;align-items:center;justify-content:center;padding:18px;}
-  .authbox{max-width:380px;width:100%;}
-  .authbox .brand{font-size:30px;margin-bottom:4px;color:var(--ink);}
-  .authbox .lede{margin-bottom:22px;}
+  #auth{position:fixed;inset:0;background:var(--bg);z-index:100;display:flex;align-items:center;justify-content:center;padding:18px;
+    background-image:radial-gradient(circle at 50% 30%,rgba(255,255,255,.04),transparent 55%);}
+  .authbox{max-width:400px;width:100%;}
+  .authbox .brand{font-size:38px;margin-bottom:6px;}
+  .authbox .lede{margin-bottom:26px;}
   .spinner{display:none;}
 </style>
 </head>
@@ -127,13 +182,16 @@
     <button data-v="connect">Connections</button>
     <button data-v="platform" id="navPlatform" style="display:none;color:var(--signal);opacity:1">Platform</button>
   </div>
-  <div class="who"><span id="whoEmail"></span><button onclick="signOut()">Sign out</button></div>
+  <div class="who">
+    <div class="themebar" id="themebar"></div>
+    <span id="whoEmail"></span><button onclick="signOut()">Sign out</button></div>
 </div>
 
 <div id="appBody" style="display:none">
 <!-- DASHBOARD -->
 <div class="view on" id="v-dash"><div class="wrap">
-  <h1>Overview</h1><p class="lede">Your teams and trainees — visible only to you.</p>
+  <h1>Overview</h1><p class="lede" id="dashLede">Speed-to-proficiency across your organisation.</p>
+  <div class="purview" id="purviewBar"></div>
   <div class="grid" id="dashStats"></div>
   <div class="panel"><h2>Proficiency mix</h2><div class="seg" id="dashSeg"></div>
     <div style="display:flex;gap:16px;margin-top:9px;font-size:12px;flex-wrap:wrap">
@@ -276,7 +334,7 @@ const MILES=[
   {key:"firstdeal",name:"First closed deal",sub:"Owns a deal to signature",bench:9},
   {key:"quota",name:"First quota-attainment month",sub:"Hits monthly target solo",bench:16},
 ];
-const bandColorHex={Proficient:"#2f6b4f",Developing:"#c8901f",Lagging:"#b33a2e"};
+const bandColorHex={Proficient:"#2dd4a8",Developing:"#f5b544",Lagging:"#ff5a5f"};
 
 // in-memory caches loaded from Supabase
 let TEAMS=[], MEMBERS=[], ASSESS=[], CONNS=[];
@@ -325,11 +383,8 @@ async function signOut(){await sb.auth.signOut();location.reload();}
 // Find an org by name or create it; ensure the user is a member. Sets CUR_ORG + display.
 async function ensureOrg(name){
   // already a member of something?
-  let {data:mine}=await sb.from('org_members').select('org_id').limit(1);
-  if(mine&&mine.length){
-    const {data:org}=await sb.from('organizations').select('id,name').eq('id',mine[0].org_id).single();
-    if(org){setOrg(org.id,org.name);return;}
-  }
+  let {data:mine}=await sb.from('org_members').select('org_id,organizations(id,name)').limit(1);
+  if(mine&&mine.length&&mine[0].organizations){setOrg(mine[0].organizations.id,mine[0].organizations.name);return;}
   // create the org (RLS: insert allowed because created_by = me)
   const {data:created,error}=await sb.from('organizations').insert({name,created_by:session.user.id}).select().single();
   if(error){console.warn('org create',error);return;}
@@ -348,24 +403,9 @@ function onAuthed(){
   loadAll();
 }
 async function loadAll(){
-  // resolve current org — try membership, then fall back to created_by
-  let orgRow=null;
-  const {data:mem,error:memErr}=await sb.from('org_members').select('org_id').limit(1);
-  if(memErr)console.warn('org_members read',memErr);
-  if(mem&&mem.length){
-    const {data:org,error:orgErr}=await sb.from('organizations').select('id,name').eq('id',mem[0].org_id).maybeSingle();
-    if(orgErr)console.warn('organizations read',orgErr);
-    if(org)orgRow=org;
-  }
-  if(!orgRow){
-    // fallback: any org this user created (RLS: insert policy proves ownership)
-    const {data:owned,error:ownErr}=await sb.from('organizations').select('id,name').eq('created_by',session.user.id).limit(1);
-    if(ownErr)console.warn('owned org read',ownErr);
-    if(owned&&owned.length)orgRow=owned[0];
-  }
-  if(orgRow)setOrg(orgRow.id,orgRow.name);
-  else console.warn('NO ORG RESOLVED for',session.user.email);
-
+  // resolve current org membership
+  const {data:mem}=await sb.from('org_members').select('org_id,organizations(id,name)').limit(1);
+  if(mem&&mem.length&&mem[0].organizations){setOrg(mem[0].organizations.id,mem[0].organizations.name);}
   const [t,m,a,c]=await Promise.all([
     sb.from('teams').select('*').order('created_at'),
     sb.from('members').select('*'),
@@ -568,7 +608,8 @@ function reflectSource(){
 function addMemberRow(){
   const d=document.createElement('div');d.className='row';d.style.marginTop='8px';
   d.innerHTML=`<div style="flex:2"><input type="text" class="mm-name" placeholder="Name"></div>
-    <div style="flex:1"><input type="text" class="mm-id" placeholder="ID (optional)"></div>`;
+    <div style="flex:1"><input type="text" class="mm-id" placeholder="ID (optional)"></div>
+    <div style="flex:1"><input type="text" class="mm-mgr" placeholder="Manager (optional)"></div>`;
   document.getElementById('memberRows').appendChild(d);
 }
 async function createTeam(){
@@ -586,7 +627,8 @@ async function createTeam(){
     const rows=[...document.querySelectorAll('#memberRows .row')].map(r=>({
       name:r.querySelector('.mm-name').value.trim(),
       emp_id:r.querySelector('.mm-id').value.trim()||null,
-    })).filter(m=>m.name).map(m=>({owner_id:session.user.id,org_id:orgId,team_id:team.id,name:m.name,emp_id:m.emp_id}));
+      manager:r.querySelector('.mm-mgr')?.value.trim()||null,
+    })).filter(m=>m.name).map(m=>({owner_id:session.user.id,org_id:orgId,team_id:team.id,name:m.name,emp_id:m.emp_id,manager:m.manager}));
     if(rows.length){const {data:ins,error:e2}=await sb.from('members').insert(rows).select();
       if(e2){tmsg('Team made, member save failed: '+e2.message);} else MEMBERS.push(...(ins||[]));}
   }else{
@@ -634,26 +676,78 @@ function closeTeam(){document.getElementById('teamModal').classList.remove('on')
 
 /* ============ DASHBOARD ============ */
 function latestPerPerson(){const map={};[...ASSESS].reverse().forEach(a=>{map[a.team_id+'|'+a.name]=a;});return Object.values(map);}
+
+/* ===== PURVIEWS ===== */
+let PURVIEW='org';      // 'org' | 'team' | 'manager'
+let PURVIEW_VAL=null;   // selected team id or manager name
+function buildPurview(){
+  const bar=document.getElementById('purviewBar');if(!bar)return;
+  bar.innerHTML=`
+    <button data-p="org" class="${PURVIEW==='org'?'on':''}" onclick="setPurview('org')">Org-wide</button>
+    <button data-p="team" class="${PURVIEW==='team'?'on':''}" onclick="setPurview('team')">By team</button>
+    <button data-p="manager" class="${PURVIEW==='manager'?'on':''}" onclick="setPurview('manager')">By manager</button>`;
+}
+function setPurview(p){PURVIEW=p;PURVIEW_VAL=null;buildPurview();renderDash();}
+// returns the set of team_ids in scope, plus a label
+function purviewScope(){
+  if(PURVIEW==='org')return{teamIds:TEAMS.map(t=>t.id),label:'Across all teams'};
+  if(PURVIEW==='team'){
+    const tid=PURVIEW_VAL||TEAMS[0]?.id;
+    return{teamIds:tid?[tid]:[],label:'Team: '+(TEAMS.find(t=>t.id===tid)?.name||'—'),pick:'team'};
+  }
+  if(PURVIEW==='manager'){
+    const mgr=PURVIEW_VAL||[...new Set(MEMBERS.map(m=>m.manager).filter(Boolean))][0];
+    // teams that contain at least one member under this manager
+    const memberNames=MEMBERS.filter(m=>m.manager===mgr).map(m=>m.name);
+    const teamIds=[...new Set(MEMBERS.filter(m=>m.manager===mgr).map(m=>m.team_id))];
+    return{teamIds,label:'Manager: '+(mgr||'—'),pick:'manager',mgr,memberNames};
+  }
+}
 function renderDash(){
-  const latest=latestPerPerson(),tot=latest.length;
+  buildPurview();
+  const scope=purviewScope();
+  // optional second-row selector for team/manager
+  const selWrap=document.getElementById('purviewBar');
+  if(scope.pick==='team'){
+    const tid=PURVIEW_VAL||TEAMS[0]?.id;
+    selWrap.insertAdjacentHTML('beforeend',
+      `<select style="width:auto;margin-left:10px;display:inline-block;padding:7px 10px" onchange="PURVIEW_VAL=this.value;renderDash()">`+
+      TEAMS.map(t=>`<option value="${t.id}" ${t.id===tid?'selected':''}>${t.name}</option>`).join('')+`</select>`);
+  }else if(scope.pick==='manager'){
+    const mgrs=[...new Set(MEMBERS.map(m=>m.manager).filter(Boolean))];
+    const cur=PURVIEW_VAL||mgrs[0];
+    selWrap.insertAdjacentHTML('beforeend',
+      `<select style="width:auto;margin-left:10px;display:inline-block;padding:7px 10px" onchange="PURVIEW_VAL=this.value;renderDash()">`+
+      (mgrs.length?mgrs.map(m=>`<option value="${m}" ${m===cur?'selected':''}>${m}</option>`).join(''):'<option>— no managers —</option>')+`</select>`);
+  }
+  document.getElementById('dashLede').textContent=scope.label;
+
+  // filter assessments to scope
+  let latest=latestPerPerson().filter(a=>scope.teamIds.includes(a.team_id));
+  if(PURVIEW==='manager'&&scope.memberNames)latest=latest.filter(a=>scope.memberNames.includes(a.name));
+
+  const tot=latest.length;
   const prof=latest.filter(a=>a.result.band==="Proficient").length;
   const dev=latest.filter(a=>a.result.band==="Developing").length;
   const lag=latest.filter(a=>a.result.band==="Lagging").length;
   const avg=tot?Math.round(latest.reduce((s,a)=>s+a.result.composite,0)/tot):0;
+  const teamsInScope=scope.teamIds.length;
   document.getElementById('dashStats').innerHTML=`
-    <div class="stat"><div class="stat-n">${TEAMS.length}</div><div class="stat-l">Teams</div></div>
+    <div class="stat"><div class="stat-n">${teamsInScope}</div><div class="stat-l">${PURVIEW==='org'?'Teams':'Teams in scope'}</div></div>
     <div class="stat"><div class="stat-n">${tot}</div><div class="stat-l">Assessed</div></div>
-    <div class="stat"><div class="stat-n">${avg}</div><div class="stat-l">Avg score</div></div>
+    <div class="stat"><div class="stat-n">${avg||'—'}</div><div class="stat-l">Avg score</div></div>
     <div class="stat"><div class="stat-n">${prof}</div><div class="stat-l">Proficient</div></div>`;
-  const totalMembers=MEMBERS.length,na=Math.max(0,totalMembers-tot);
+  const membersInScope=MEMBERS.filter(m=>scope.teamIds.includes(m.team_id)&&(PURVIEW!=='manager'||m.manager===scope.mgr)).length;
+  const na=Math.max(0,membersInScope-tot);
   const seg=[[prof,'var(--green)'],[dev,'var(--amber)'],[lag,'var(--red)'],[na,'var(--line)']];
   const sum=seg.reduce((s,x)=>s+x[0],0)||1;
   document.getElementById('dashSeg').innerHTML=seg.map(([n,c])=>n?`<div style="background:${c};width:${n/sum*100}%">${n}</div>`:'').join('')
-    ||'<div style="background:var(--line);width:100%;color:var(--muted)">no data</div>';
-  document.getElementById('dashTeams').innerHTML=TEAMS.length?TEAMS.map(t=>{const la=ASSESS.filter(a=>a.team_id===t.id);
+    ||'<div style="background:var(--line);width:100%;color:var(--muted)">no data in this view</div>';
+  const teamsToShow=TEAMS.filter(t=>scope.teamIds.includes(t.id));
+  document.getElementById('dashTeams').innerHTML=teamsToShow.length?teamsToShow.map(t=>{const la=ASSESS.filter(a=>a.team_id===t.id);
     const av=la.length?Math.round(la.reduce((s,a)=>s+a.result.composite,0)/la.length):0;
     return `<div class="metric"><span>${t.name}</span><span>${la.length}/${MEMBERS.filter(m=>m.team_id===t.id).length} assessed · avg ${av||'—'}</span></div>`;}).join('')
-    :'<div class="empty">No teams yet.</div>';
+    :'<div class="empty">No teams in this view.</div>';
 }
 
 /* ============ REPORTS ============ */
@@ -693,7 +787,20 @@ function rosterPDF(recs,title,fname){const doc=pdfDoc();pdfHeader(doc,'Roster Re
 function exportRosterPDF(){rosterPDF(latestPerPerson(),'All teams','rampiq_all.pdf');}
 function exportTeamPDF(id){const t=TEAMS.find(x=>x.id===id);rosterPDF(ASSESS.filter(a=>a.team_id===id),t.name,'rampiq_team.pdf');}
 
+/* ============ THEME ============ */
+const THEMES=[['mint','#00e5a0'],['blue','#3b82f6'],['lime','#a3e635'],['violet','#a855f7'],['orange','#ff6b35']];
+function applyTheme(t){document.documentElement.setAttribute('data-theme',t);
+  try{localStorage.setItem('riq_theme',t);}catch(e){}
+  document.querySelectorAll('.swatch').forEach(s=>s.classList.toggle('on',s.dataset.t===t));}
+function buildThemebar(){
+  const bar=document.getElementById('themebar');if(!bar)return;
+  bar.innerHTML=THEMES.map(([t,c])=>`<span class="swatch" data-t="${t}" style="background:${c}" onclick="applyTheme('${t}')" title="${t}"></span>`).join('');
+  let saved='mint';try{saved=localStorage.getItem('riq_theme')||'mint';}catch(e){}
+  applyTheme(saved);
+}
+
 /* ============ INIT ============ */
+buildThemebar();
 initSupabase();
 </script>
 </body>
