@@ -639,7 +639,9 @@ async function createTeam(){
       const d=await res.json();
       if(!res.ok)throw new Error(d.error||'Roster pull failed');
       const rows=(d.members||[]).map(m=>({owner_id:session.user.id,org_id:orgId,team_id:team.id,
-        name:m.name,emp_id:m.emp_id,start_week:m.start_week,role:m.role,manager:m.manager}));
+        name:m.name,emp_id:m.emp_id,start_week:m.start_week,
+        job_title:m.job_title||m.role||null,manager:m.manager||null,manager_id:m.manager_id||null,
+        wd_worker_id:m.wd_worker_id||null,department:m.department||null,cost_center:m.cost_center||null}));
       if(rows.length){const {data:ins}=await sb.from('members').insert(rows).select();MEMBERS.push(...(ins||[]));}
     }catch(e){tmsg('Team made, but roster pull failed: '+e.message);btn.disabled=false;setTimeout(()=>{closeCreate();show('teams');},1400);return;}
   }
@@ -685,7 +687,8 @@ function buildPurview(){
   bar.innerHTML=`
     <button data-p="org" class="${PURVIEW==='org'?'on':''}" onclick="setPurview('org')">Org-wide</button>
     <button data-p="team" class="${PURVIEW==='team'?'on':''}" onclick="setPurview('team')">By team</button>
-    <button data-p="manager" class="${PURVIEW==='manager'?'on':''}" onclick="setPurview('manager')">By manager</button>`;
+    <button data-p="manager" class="${PURVIEW==='manager'?'on':''}" onclick="setPurview('manager')">By manager</button>
+    <button data-p="dept" class="${PURVIEW==='dept'?'on':''}" onclick="setPurview('dept')">By department</button>`;
 }
 function setPurview(p){PURVIEW=p;PURVIEW_VAL=null;buildPurview();renderDash();}
 // returns the set of team_ids in scope, plus a label
@@ -701,6 +704,12 @@ function purviewScope(){
     const memberNames=MEMBERS.filter(m=>m.manager===mgr).map(m=>m.name);
     const teamIds=[...new Set(MEMBERS.filter(m=>m.manager===mgr).map(m=>m.team_id))];
     return{teamIds,label:'Manager: '+(mgr||'—'),pick:'manager',mgr,memberNames};
+  }
+  if(PURVIEW==='dept'){
+    const dept=PURVIEW_VAL||[...new Set(MEMBERS.map(m=>m.department).filter(Boolean))][0];
+    const memberNames=MEMBERS.filter(m=>m.department===dept).map(m=>m.name);
+    const teamIds=[...new Set(MEMBERS.filter(m=>m.department===dept).map(m=>m.team_id))];
+    return{teamIds,label:'Department: '+(dept||'—'),pick:'dept',dept,memberNames};
   }
 }
 function renderDash(){
@@ -719,12 +728,18 @@ function renderDash(){
     selWrap.insertAdjacentHTML('beforeend',
       `<select style="width:auto;margin-left:10px;display:inline-block;padding:7px 10px" onchange="PURVIEW_VAL=this.value;renderDash()">`+
       (mgrs.length?mgrs.map(m=>`<option value="${m}" ${m===cur?'selected':''}>${m}</option>`).join(''):'<option>— no managers —</option>')+`</select>`);
+  }else if(scope.pick==='dept'){
+    const depts=[...new Set(MEMBERS.map(m=>m.department).filter(Boolean))];
+    const cur=PURVIEW_VAL||depts[0];
+    selWrap.insertAdjacentHTML('beforeend',
+      `<select style="width:auto;margin-left:10px;display:inline-block;padding:7px 10px" onchange="PURVIEW_VAL=this.value;renderDash()">`+
+      (depts.length?depts.map(d=>`<option value="${d}" ${d===cur?'selected':''}>${d}</option>`).join(''):'<option>— sync Workday for departments —</option>')+`</select>`);
   }
   document.getElementById('dashLede').textContent=scope.label;
 
   // filter assessments to scope
   let latest=latestPerPerson().filter(a=>scope.teamIds.includes(a.team_id));
-  if(PURVIEW==='manager'&&scope.memberNames)latest=latest.filter(a=>scope.memberNames.includes(a.name));
+  if((PURVIEW==='manager'||PURVIEW==='dept')&&scope.memberNames)latest=latest.filter(a=>scope.memberNames.includes(a.name));
 
   const tot=latest.length;
   const prof=latest.filter(a=>a.result.band==="Proficient").length;
@@ -737,7 +752,7 @@ function renderDash(){
     <div class="stat"><div class="stat-n">${tot}</div><div class="stat-l">Assessed</div></div>
     <div class="stat"><div class="stat-n">${avg||'—'}</div><div class="stat-l">Avg score</div></div>
     <div class="stat"><div class="stat-n">${prof}</div><div class="stat-l">Proficient</div></div>`;
-  const membersInScope=MEMBERS.filter(m=>scope.teamIds.includes(m.team_id)&&(PURVIEW!=='manager'||m.manager===scope.mgr)).length;
+  const membersInScope=MEMBERS.filter(m=>scope.teamIds.includes(m.team_id)&&(PURVIEW!=='manager'||m.manager===scope.mgr)&&(PURVIEW!=='dept'||m.department===scope.dept)).length;
   const na=Math.max(0,membersInScope-tot);
   const seg=[[prof,'var(--green)'],[dev,'var(--amber)'],[lag,'var(--red)'],[na,'var(--line)']];
   const sum=seg.reduce((s,x)=>s+x[0],0)||1;
