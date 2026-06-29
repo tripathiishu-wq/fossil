@@ -196,7 +196,8 @@
   <h1>Platform</h1><p class="lede">Aggregate view across every organisation on RampIQ — your metrics for investors.</p>
   <div class="grid" id="platStats"></div>
   <div class="panel"><h2>Organisations</h2><div id="platOrgs"></div></div>
-  <p class="help">Visible only to the platform owner account.</p>
+  <div class="panel"><h2>Users</h2><div id="platUsers"></div></div>
+  <p class="help">Visible only to the platform owner account. Deletions are permanent.</p>
 </div></div>
 </div>
 
@@ -478,24 +479,54 @@ function renderConns(){
 
 /* ============ PLATFORM (owner) ============ */
 async function renderPlatform(){
-  const stats=document.getElementById('platStats'),list=document.getElementById('platOrgs');
+  const stats=document.getElementById('platStats'),list=document.getElementById('platOrgs'),ulist=document.getElementById('platUsers');
   stats.innerHTML='<div class="stat"><div class="stat-n">…</div><div class="stat-l">loading</div></div>';
   const {data,error}=await sb.from('platform_stats').select('*').order('created_at',{ascending:false});
   if(error){list.innerHTML='<div class="empty">Platform view needs the org migration run in Supabase. ('+error.message+')</div>';stats.innerHTML='';return;}
   const orgs=data||[];
   const totTrainers=orgs.reduce((s,o)=>s+(+o.trainers||0),0);
   const totAssess=orgs.reduce((s,o)=>s+(+o.assessments||0),0);
-  const avg=orgs.length?Math.round(orgs.reduce((s,o)=>s+(+o.avg_score||0),0)/orgs.filter(o=>o.avg_score).length||0):0;
+  const scored=orgs.filter(o=>o.avg_score);
+  const avg=scored.length?Math.round(scored.reduce((s,o)=>s+(+o.avg_score||0),0)/scored.length):0;
   stats.innerHTML=`
     <div class="stat"><div class="stat-n">${orgs.length}</div><div class="stat-l">Organisations</div></div>
     <div class="stat"><div class="stat-n">${totTrainers}</div><div class="stat-l">Trainers</div></div>
     <div class="stat"><div class="stat-n">${totAssess}</div><div class="stat-l">Assessments</div></div>
     <div class="stat"><div class="stat-n">${avg||'—'}</div><div class="stat-l">Avg score</div></div>`;
   list.innerHTML=orgs.length?`<div style="overflow:auto"><table>
-    <thead><tr><th>Organisation</th><th>Trainers</th><th>Teams</th><th>Assessments</th><th>Avg</th><th>Joined</th></tr></thead>
+    <thead><tr><th>Organisation</th><th>Trainers</th><th>Teams</th><th>Assessments</th><th>Avg</th><th>Joined</th><th></th></tr></thead>
     <tbody>${orgs.map(o=>`<tr><td>${o.org_name}</td><td>${o.trainers}</td><td>${o.teams}</td>
-      <td>${o.assessments}</td><td>${o.avg_score||'—'}</td><td>${new Date(o.created_at).toLocaleDateString()}</td></tr>`).join('')}
+      <td>${o.assessments}</td><td>${o.avg_score||'—'}</td><td>${new Date(o.created_at).toLocaleDateString()}</td>
+      <td><button class="btn alt sm" style="color:var(--red)" onclick="delOrg('${o.org_id}','${o.org_name.replace(/'/g,"")}')">Delete</button></td></tr>`).join('')}
     </tbody></table></div>`:'<div class="empty">No organisations yet.</div>';
+  // users
+  ulist.innerHTML='<div class="empty">Loading users…</div>';
+  try{
+    const res=await fetch('/api/admin',{method:'POST',headers:{'Content-Type':'application/json',Authorization:await authHeader()},body:JSON.stringify({action:'list_users'})});
+    const d=await res.json();
+    if(!res.ok)throw new Error(d.error||'Failed');
+    const us=d.users||[];
+    ulist.innerHTML=`<div style="overflow:auto"><table>
+      <thead><tr><th>Email</th><th>Org</th><th>Role</th><th>Last sign-in</th><th></th></tr></thead>
+      <tbody>${us.map(u=>`<tr><td>${u.email}</td><td>${u.org||'—'}</td><td>${u.role||'—'}</td>
+        <td>${u.last_sign_in_at?new Date(u.last_sign_in_at).toLocaleDateString():'never'}</td>
+        <td>${u.email===PLATFORM_OWNER?'<span class="tag">owner</span>':`<button class="btn alt sm" style="color:var(--red)" onclick="delUser('${u.id}','${u.email}')">Delete</button>`}</td></tr>`).join('')}
+      </tbody></table></div>`;
+  }catch(e){ulist.innerHTML='<div class="empty">Couldn\'t load users: '+e.message+' (needs /api/admin deployed + service-role key set)</div>';}
+}
+async function delOrg(id,name){
+  if(!confirm('Delete organisation "'+name+'" and ALL its teams, members, and assessments? This cannot be undone.'))return;
+  const res=await fetch('/api/admin',{method:'POST',headers:{'Content-Type':'application/json',Authorization:await authHeader()},body:JSON.stringify({action:'delete_org',org_id:id})});
+  const d=await res.json();
+  if(!res.ok)return alert('Delete failed: '+d.error);
+  renderPlatform();
+}
+async function delUser(id,email){
+  if(!confirm('Delete user '+email+' and all their data permanently?'))return;
+  const res=await fetch('/api/admin',{method:'POST',headers:{'Content-Type':'application/json',Authorization:await authHeader()},body:JSON.stringify({action:'delete_user',user_id:id})});
+  const d=await res.json();
+  if(!res.ok)return alert('Delete failed: '+d.error);
+  renderPlatform();
 }
 
 /* ============ TEAMS ============ */
