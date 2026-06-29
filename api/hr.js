@@ -1,15 +1,15 @@
-// /api/hr — connect to an HR source and pull rosters.
+// /api/hr — connect to an HR source and pull rosters WITH hierarchy.
 // Authenticated: requires the caller's Supabase access token (Bearer).
-// Connection metadata is stored per-user; secrets stay in Vercel env.
+// Connection metadata stored per-user; secrets stay in Vercel env.
 //
 // Actions (POST body { action, ... }):
 //   { action:'connect', kind:'workday', base_url, tenant, client_id }
 //   { action:'connect', kind:'mcp', base_url }
-//   { action:'roster',  connection_id, fields:[...] }
+//   { action:'roster',  connection_id, fields:[...] }   // returns members w/ manager + dept + cost center
 //
 // Vercel env vars:
-//   SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY      (verify the user + write rows)
-//   WORKDAY_CLIENT_SECRET                          (the secret half of OAuth)
+//   SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY
+//   WORKDAY_CLIENT_SECRET
 //   MCP_API_KEY
 
 import { createClient } from '@supabase/supabase-js';
@@ -17,7 +17,6 @@ import { createClient } from '@supabase/supabase-js';
 export default async function handler(req, res) {
   if (req.method !== 'POST') return res.status(405).json({ error: 'POST only' });
 
-  // --- authenticate the caller ---
   const token = (req.headers.authorization || '').replace('Bearer ', '');
   if (!token) return res.status(401).json({ error: 'Not signed in' });
 
@@ -31,10 +30,7 @@ export default async function handler(req, res) {
   try {
     if (action === 'connect') {
       const { kind, base_url, tenant, client_id } = req.body;
-      // Validate the connection actually works before saving it.
-      if (kind === 'workday') {
-        await workdayToken(base_url, tenant, client_id); // throws if creds bad
-      }
+      if (kind === 'workday') await workdayToken(base_url, tenant, client_id);
       const { data, error } = await admin.from('hr_connections').insert({
         owner_id: userId, kind, base_url, tenant, client_id, status: 'connected',
       }).select().single();
@@ -61,7 +57,7 @@ export default async function handler(req, res) {
   }
 }
 
-/* --------------- Workday OAuth + pull --------------- */
+/* --------------- Workday OAuth --------------- */
 async function workdayToken(baseUrl, tenant, clientId) {
   const r = await fetch(`${baseUrl}/ccx/oauth2/${tenant}/token`, {
     method: 'POST',
@@ -78,19 +74,48 @@ async function workdayToken(baseUrl, tenant, clientId) {
   return j.access_token;
 }
 
+/* --------------- Workday roster + hierarchy --------------- */
+// Pulls workers, then resolves each worker's manager into a display name
+// using the worker set itself, so the "By Manager" view fills automatically.
 async function pullWorkday(conn, fields) {
   const token = await workdayToken(conn.base_url, conn.tenant, conn.client_id);
-  const r = await fetch(
-    `${conn.base_url}/ccx/api/staffing/v6/${conn.tenant}/workers?limit=100`,
-    { headers: { Authorization: `Bearer ${token}` } }
-  );
-  if (!r.ok) throw new Error('Workday workers fetch failed (' + r.status + ')');
-  const data = await r.json();
-  return (data.data || []).map((w) => {
-    const m = { name: w.descriptor, emp_id: w.id };
+
+  // 1) pull workers (paginate up to a few hundred)
+  let workers = [];
+  let offset = 0;
+  for (let page = 0; page < 5; page++) {
+    const r = await fetch(
+      `${conn.base_url}/ccx/api/staffing/v6/${conn.tenant}/workers?limit=100&offset=${offset}`,
+      { headers: { Authorization: `Bearer ${token}` } }
+    );
+    if (!r.ok) throw new Error('Workday workers fetch failed (' + r.status + ')');
+    const data = await r.json();
+    const batch = data.data || [];
+    workers = workers.concat(batch);
+    if (batch.length < 100) break;
+    offset += 100;
+  }
+
+  // 2) build an id -> name map so we can resolve manager ids to manager names
+  const nameById = {};
+  workers.forEach((w) => { nameById[w.id] = w.descriptor; });
+
+  // 3) map to our member shape with hierarchy + rich fields.
+  // Workday field paths vary by tenant; these are the common v6 shapes.
+  return workers.map((w) => {
+    const mgrId = w.managementChain?.[0]?.id || w.manager?.id || null;
+    const m = {
+      name: w.descriptor,
+      emp_id: w.workerId || w.id,
+      wd_worker_id: w.id,
+      manager_id: mgrId,
+      manager: mgrId ? (nameById[mgrId] || w.manager?.descriptor || null) : (w.manager?.descriptor || null),
+    };
     if (fields.includes('start')) m.start_week = w.hireDate;
-    if (fields.includes('role'))  m.role = w.primaryJob?.descriptor;
-    if (fields.includes('mgr'))   m.manager = w.manager?.descriptor;
+    if (fields.includes('role'))  m.job_title = w.primaryJob?.descriptor || w.businessTitle;
+    // always carry dept + cost center when present (cheap, useful for rollups)
+    m.department  = w.primaryJob?.supervisoryOrganization?.descriptor || w.organization?.descriptor || null;
+    m.cost_center = w.costCenter?.descriptor || w.primaryJob?.costCenter?.descriptor || null;
     return m;
   });
 }
@@ -100,11 +125,14 @@ async function pullMCP(conn, fields) {
   const r = await fetch(`${conn.base_url}/tools/call`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${process.env.MCP_API_KEY || ''}` },
-    body: JSON.stringify({ name: 'list_employees', arguments: { fields } }),
+    body: JSON.stringify({ name: 'list_employees', arguments: { fields, include_hierarchy: true } }),
   });
   if (!r.ok) throw new Error('MCP call failed (' + r.status + ')');
   const data = await r.json();
   return (data?.result?.employees || []).map((e) => ({
-    name: e.name, emp_id: e.employee_id, start_week: e.start_date, role: e.title, manager: e.manager,
+    name: e.name, emp_id: e.employee_id, wd_worker_id: e.id,
+    manager: e.manager, manager_id: e.manager_id,
+    start_week: e.start_date, job_title: e.title,
+    department: e.department, cost_center: e.cost_center,
   }));
 }
