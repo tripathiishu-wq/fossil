@@ -249,7 +249,7 @@
 <!-- ONBOARDING (structure-first) -->
 <div class="view" id="v-onboard"><div class="wrap" style="max-width:860px">
   <div style="text-align:center;margin-bottom:8px">
-    <div class="tag" style="font-size:12px">Step 1 of 2 · Set up your organisation</div>
+    <div class="tag" style="font-size:12px">Step 1 of 5 · Organisation → Teams → Assess → Reports → Dashboard</div>
   </div>
   <h1 id="onboardTitle">Let's build your org structure</h1>
   <p class="lede">Define how your organisation is shaped — departments, cost centers, job titles, and managers. You'll assign people to these as you onboard teams, and your reporting views (by manager, by department) will be accurate from day one. <b>This takes two minutes and only happens once.</b></p>
@@ -828,8 +828,16 @@ function renderOnboard(){
 }
 function updateOnboardCount(){
   const el=document.getElementById('onboardCount');if(!el)return;
-  const n=ORGDIR.length;
-  el.textContent=n?`${n} item${n===1?'':'s'} defined. You can always add more later under the Org tab.`:'Tip: even a couple of departments and managers makes your dashboard meaningful.';
+  const hasDept=ORGDIR.some(o=>o.kind==='department');
+  const hasMgr=ORGDIR.some(o=>o.kind==='manager');
+  if(hasDept&&hasMgr){
+    el.textContent=`${ORGDIR.length} item${ORGDIR.length===1?'':'s'} defined — your organisation is ready. Continue when you like.`;
+    el.style.color='var(--green)';
+  }else{
+    const need=[!hasDept?'a department':null,!hasMgr?'a manager':null].filter(Boolean).join(' and ');
+    el.textContent=`Add at least ${need} to continue — everything else inherits from your org chart.`;
+    el.style.color='var(--muted)';
+  }
 }
 async function addOnboardItem(kind){
   const el=document.getElementById('onbnew_'+kind);const name=el.value.trim();if(!name)return;
@@ -1051,7 +1059,13 @@ async function createTeam(){
     const {data:ins,error:e3}=await sb.from('members').insert(rows).select();
     if(e3){tmsg('Team made, import save failed: '+e3.message);} else {MEMBERS.push(...(ins||[]));
       for(const m of rows){await ensureOrgDirValue('manager',m.manager);await ensureOrgDirValue('department',m.department);
-        await ensureOrgDirValue('cost_center',m.cost_center);await ensureOrgDirValue('job_title',m.job_title);}}
+        await ensureOrgDirValue('cost_center',m.cost_center);await ensureOrgDirValue('job_title',m.job_title);}
+      buildMgrMap();
+      // Import just built the org chart from the file — if that satisfies the
+      // pillar, proceed; otherwise stay on onboarding so structure stays first.
+      btn.disabled=false;btn.textContent=_t;closeCreate();
+      if(orgStructureReady())show('dash');else{show('onboard');}
+      return;}
   }else{
     tmsg('Pulling roster…',true);
     try{
