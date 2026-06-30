@@ -246,6 +246,26 @@
   <div class="panel"><div id="repTable"></div></div>
 </div></div>
 
+<!-- ONBOARDING (structure-first) -->
+<div class="view" id="v-onboard"><div class="wrap" style="max-width:860px">
+  <div style="text-align:center;margin-bottom:8px">
+    <div class="tag" style="font-size:12px">Step 1 of 2 · Set up your organisation</div>
+  </div>
+  <h1 id="onboardTitle">Let's build your org structure</h1>
+  <p class="lede">Define how your organisation is shaped — departments, cost centers, job titles, and managers. You'll assign people to these as you onboard teams, and your reporting views (by manager, by department) will be accurate from day one. <b>This takes two minutes and only happens once.</b></p>
+  <div class="grid" id="onboardGrid" style="grid-template-columns:repeat(auto-fit,minmax(260px,1fr));margin-top:8px"></div>
+  <div class="panel" style="margin-top:18px;border-color:var(--accent)">
+    <h2>Shortcut — import it all from a spreadsheet</h2>
+    <p class="help" style="margin-top:0">Already have your roster in Excel or Google Sheets? Skip manual setup — import a file and RampIQ builds your departments, managers, and cost centers automatically from the data.</p>
+    <div class="btnrow"><button class="btn alt sm" onclick="show('teams');openCreate();pickConn(document.querySelector('[data-conn=\'file\']'))">Import from file →</button></div>
+  </div>
+  <div class="btnrow" style="margin-top:22px;justify-content:space-between;display:flex">
+    <button class="btn alt" onclick="finishOnboarding()">Skip for now</button>
+    <button class="btn sig" onclick="finishOnboarding()" id="onboardDone">Continue to dashboard →</button>
+  </div>
+  <p class="help" id="onboardCount" style="text-align:center;margin-top:12px"></p>
+</div></div>
+
 <!-- ORG DIRECTORY -->
 <div class="view" id="v-org"><div class="wrap">
   <h1>Org structure</h1><p class="lede">Define departments, cost centers, job titles, and managers once — then assign people to them with a click instead of retyping every time. This also keeps your By-Manager and By-Department views accurate.</p>
@@ -387,6 +407,7 @@ const BEHAV_SCALE=[["1","Poor"],["2","Developing"],["3","Solid"],["4","Strong"],
 
 // in-memory caches loaded from Supabase
 let TEAMS=[], MEMBERS=[], ASSESS=[], CONNS=[], ORGDIR=[];
+let JUST_ONBOARDED=false;
 let CUR_ORG=null;          // {id,name} the user's active organisation
 let signupMode=false;
 
@@ -433,6 +454,7 @@ async function signUp(){
     session=data.session;
     // fresh signup: create org directly, skip the pointless membership pre-check
     await createOrg(org);
+    JUST_ONBOARDED=true;
     onAuthed();
   } else {
     if(btn){btn.disabled=false;btn.textContent=btn.dataset.t;}
@@ -480,7 +502,14 @@ async function loadAll(){
     sb.from('org_directory').select('*').order('name'),
   ]);
   TEAMS=t.data||[];MEMBERS=m.data||[];ASSESS=a.data||[];CONNS=c.data||[];ORGDIR=od.data||[];
-  renderDash();
+  // Structure-first onboarding: send brand-new orgs (or orgs with no structure yet)
+  // to the setup screen before the dashboard, so it never opens empty.
+  if(JUST_ONBOARDED || (ORGDIR.length===0 && TEAMS.length===0)){
+    JUST_ONBOARDED=false;
+    show('onboard');
+  } else {
+    renderDash();
+  }
 }
 async function authHeader(){const {data}=await sb.auth.getSession();return 'Bearer '+data.session.access_token;}
 
@@ -493,6 +522,7 @@ function show(v){
   if(v==='dash')renderDash();if(v==='teams')renderTeams();if(v==='assess')renderAssessBody();
   if(v==='reports')renderReports();if(v==='assess')renderTeamSelect();
   if(v==='connect')renderConns();if(v==='platform')renderPlatform();if(v==='org')renderOrgDir();
+  if(v==='onboard')renderOnboard();
   window.scrollTo(0,0);
 }
 
@@ -705,10 +735,10 @@ async function addOrgDirItem(kind){
   if(error){if(error.code==='23505'){el.value='';return;}alert('Could not add: '+error.message);return;}
   ORGDIR.push(data);el.value='';renderOrgDir();
 }
-async function removeOrgDirItem(id){
+async function removeOrgDirItem(id,fromOnboard){
   const {error}=await sb.from('org_directory').delete().eq('id',id);
   if(error){alert('Could not remove: '+error.message);return;}
-  ORGDIR=ORGDIR.filter(o=>o.id!==id);renderOrgDir();
+  ORGDIR=ORGDIR.filter(o=>o.id!==id);if(fromOnboard)renderOnboard();else renderOrgDir();
 }
 // Make sure a value exists in the directory (used when importing files/Workday so the
 // org chart builds itself from real data instead of staying empty).
@@ -724,6 +754,37 @@ function orgDirOptions(kind,selected){
   const items=ORGDIR.filter(o=>o.kind===kind);
   return `<option value="">— none —</option>`+items.map(o=>`<option value="${o.name}" ${o.name===selected?'selected':''}>${o.name}</option>`).join('');
 }
+
+/* ===== ONBOARDING (structure-first) ===== */
+function renderOnboard(){
+  const grid=document.getElementById('onboardGrid');
+  grid.innerHTML=ORGDIR_KINDS.map(([kind,label])=>{
+    const items=ORGDIR.filter(o=>o.kind===kind);
+    return `<div class="panel">
+      <h2>${label}</h2>
+      <div id="onb_${kind}">${items.length?items.map(o=>`
+        <div class="metric"><span>${o.name}</span><span><button class="btn alt sm" style="padding:3px 9px" onclick="removeOrgDirItem('${o.id}',true)">×</button></span></div>`).join(''):
+        '<p class="help" style="margin:0">None yet — add your first.</p>'}</div>
+      <div class="row" style="margin-top:10px">
+        <div style="flex:2"><input type="text" id="onbnew_${kind}" placeholder="Add ${label.toLowerCase().replace(/s$/,'')}…"
+          onkeydown="if(event.key==='Enter')addOnboardItem('${kind}')"></div>
+        <div><button class="btn alt sm" onclick="addOnboardItem('${kind}')">+ Add</button></div>
+      </div></div>`;}).join('');
+  updateOnboardCount();
+}
+function updateOnboardCount(){
+  const el=document.getElementById('onboardCount');if(!el)return;
+  const n=ORGDIR.length;
+  el.textContent=n?`${n} item${n===1?'':'s'} defined. You can always add more later under the Org tab.`:'Tip: even a couple of departments and managers makes your dashboard meaningful.';
+}
+async function addOnboardItem(kind){
+  const el=document.getElementById('onbnew_'+kind);const name=el.value.trim();if(!name)return;
+  const orgId=CUR_ORG?CUR_ORG.id:null;
+  const {data,error}=await sb.from('org_directory').insert({owner_id:session.user.id,org_id:orgId,kind,name}).select().single();
+  if(error){if(error.code==='23505'){el.value='';return;}alert('Could not add: '+error.message);return;}
+  ORGDIR.push(data);el.value='';renderOnboard();
+}
+function finishOnboarding(){show('dash');}
 
 function renderConns(){
   const el=document.getElementById('connList');
