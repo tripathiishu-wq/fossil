@@ -805,12 +805,13 @@ function openTeam(id){
   const t=TEAMS.find(x=>x.id===id),mem=MEMBERS.filter(m=>m.team_id===id);
   const rows=mem.map(m=>{const a=ASSESS.filter(x=>x.team_id===id&&x.name.startsWith(m.name)&&x.result&&x.result.band)[0];
     const c=a?bandColorHex[a.result.band]:"#c4bca5";
+    const act=`<button class="btn alt sm" style="padding:5px 11px" onclick="assessMember('${id}','${m.id}')">${a?'Re-assess':'Assess'}</button>`;
     return `<tr><td><span class="dot" style="background:${c}"></span>${m.name}</td><td>${m.emp_id||''}</td>
-      <td>${a?a.result.composite:'—'}</td><td>${a?a.result.band:'not assessed'}</td></tr>`;}).join('');
+      <td>${a?a.result.composite:'—'}</td><td>${a?a.result.band:'not assessed'}</td><td style="text-align:right">${act}</td></tr>`;}).join('');
   document.getElementById('teamModalBody').innerHTML=`<h3>${t.name}</h3>
     <p class="help" style="margin-top:0">${mem.length} members · source: ${t.source}</p>
-    <div style="overflow:auto"><table><thead><tr><th>Name</th><th>ID</th><th>Score</th><th>Status</th></tr></thead>
-    <tbody>${rows||'<tr><td colspan=4 class=empty>No members</td></tr>'}</tbody></table></div>
+    <div style="overflow:auto"><table><thead><tr><th>Name</th><th>ID</th><th>Score</th><th>Status</th><th></th></tr></thead>
+    <tbody>${rows||'<tr><td colspan=5 class=empty>No members</td></tr>'}</tbody></table></div>
     <div class="btnrow" style="margin-top:14px">
       <button class="btn alt sm" onclick="exportTeamCSV('${id}')">Team · CSV</button>
       <button class="btn alt sm" onclick="exportTeamPDF('${id}')">Team · PDF</button>
@@ -818,6 +819,18 @@ function openTeam(id){
   document.getElementById('teamModal').classList.add('on');
 }
 function closeTeam(){document.getElementById('teamModal').classList.remove('on');}
+// Jump from a team member straight into the Assess flow, pre-filled.
+function assessMember(teamId,memberId){
+  closeTeam();
+  show('assess');
+  renderTeamSelect();
+  const at=document.getElementById('aTeam');at.value=teamId;
+  fillTeamMembers();
+  const am=document.getElementById('aMember');am.value=memberId;
+  fillMember();
+  // scroll to the assess form
+  document.getElementById('v-assess').scrollIntoView({behavior:'smooth',block:'start'});
+}
 
 /* ============ DASHBOARD ============ */
 function latestPerPerson(){const map={};[...ASSESS].reverse().forEach(a=>{if(a&&a.result&&a.result.band)map[a.team_id+'|'+a.name]=a;});return Object.values(map);}
