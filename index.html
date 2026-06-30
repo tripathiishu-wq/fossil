@@ -408,6 +408,26 @@ const BEHAV_SCALE=[["1","Poor"],["2","Developing"],["3","Solid"],["4","Strong"],
 // in-memory caches loaded from Supabase
 let TEAMS=[], MEMBERS=[], ASSESS=[], CONNS=[], ORGDIR=[];
 let JUST_ONBOARDED=false;
+// Manager → inherited attributes (department/cost_center/title), learned from
+// the org chart. New manual members inherit their manager's node automatically.
+let MGR_MAP={};
+function buildMgrMap(){
+  MGR_MAP={};
+  // 1) Primary: managers defined on the org chart carry their own attributes.
+  (ORGDIR||[]).filter(o=>o.kind==='manager').forEach(o=>{
+    const m=o.meta||{};
+    MGR_MAP[o.name]={department:m.department||null,cost_center:m.cost_center||null,job_title:m.job_title||null};
+  });
+  // 2) Fallback: learn from any existing member that already has manager + attributes.
+  (MEMBERS||[]).forEach(m=>{
+    if(m.manager && (m.department||m.cost_center||m.job_title)){
+      MGR_MAP[m.manager]=MGR_MAP[m.manager]||{};
+      if(m.department && !MGR_MAP[m.manager].department)MGR_MAP[m.manager].department=m.department;
+      if(m.cost_center && !MGR_MAP[m.manager].cost_center)MGR_MAP[m.manager].cost_center=m.cost_center;
+      if(m.job_title && !MGR_MAP[m.manager].job_title)MGR_MAP[m.manager].job_title=m.job_title;
+    }
+  });
+}
 let CUR_ORG=null;          // {id,name} the user's active organisation
 let signupMode=false;
 
@@ -502,6 +522,7 @@ async function loadAll(){
     sb.from('org_directory').select('*').order('name'),
   ]);
   TEAMS=t.data||[];MEMBERS=m.data||[];ASSESS=a.data||[];CONNS=c.data||[];ORGDIR=od.data||[];
+  buildMgrMap();
   // Structure-first onboarding: send brand-new orgs (or orgs with no structure yet)
   // to the setup screen before the dashboard, so it never opens empty.
   if(JUST_ONBOARDED || (ORGDIR.length===0 && TEAMS.length===0)){
@@ -717,23 +738,37 @@ function renderOrgDir(){
   const grid=document.getElementById('orgGrid');
   grid.innerHTML=ORGDIR_KINDS.map(([kind,label])=>{
     const items=ORGDIR.filter(o=>o.kind===kind);
+    const isMgr=kind==='manager';
     return `<div class="panel">
       <h2>${label}</h2>
-      <div id="dir_${kind}">${items.length?items.map(o=>`
-        <div class="metric"><span>${o.name}</span><span><button class="btn alt sm" style="padding:3px 9px" onclick="removeOrgDirItem('${o.id}')">remove</button></span></div>`).join(''):
+      <div id="dir_${kind}">${items.length?items.map(o=>{
+        const m=o.meta||{};
+        const sub=isMgr&&(m.department||m.job_title)?`<div class="help" style="margin-top:2px">${[m.department,m.job_title].filter(Boolean).join(' · ')}</div>`:'';
+        return `<div class="metric" style="align-items:flex-start"><span>${o.name}${sub}</span><span><button class="btn alt sm" style="padding:3px 9px" onclick="removeOrgDirItem('${o.id}')">remove</button></span></div>`;}).join(''):
         '<p class="help" style="margin:0">None yet.</p>'}</div>
       <div class="row" style="margin-top:10px">
         <div style="flex:2"><input type="text" id="new_${kind}" placeholder="Add ${label.toLowerCase().replace(/s$/,'')}…"
           onkeydown="if(event.key==='Enter')addOrgDirItem('${kind}')"></div>
         <div><button class="btn alt sm" onclick="addOrgDirItem('${kind}')">+ Add</button></div>
-      </div></div>`;}).join('');
+      </div>
+      ${isMgr?`<div class="row" style="margin-top:8px">
+        <div style="flex:1"><select id="newmgr_dept">${orgDirOptions('department')}</select></div>
+        <div style="flex:1"><select id="newmgr_title">${orgDirOptions('job_title')}</select></div>
+      </div><p class="help" style="margin:6px 0 0">A manager's department & title flow down to everyone reporting to them.</p>`:''}
+      </div>`;}).join('');
 }
 async function addOrgDirItem(kind){
   const el=document.getElementById('new_'+kind);const name=el.value.trim();if(!name)return;
   const orgId=CUR_ORG?CUR_ORG.id:null;
-  const {data,error}=await sb.from('org_directory').insert({owner_id:session.user.id,org_id:orgId,kind,name}).select().single();
+  let meta={};
+  if(kind==='manager'){
+    const dept=document.getElementById('newmgr_dept')?.value||'';
+    const title=document.getElementById('newmgr_title')?.value||'';
+    meta={department:dept||null,job_title:title||null};
+  }
+  const {data,error}=await sb.from('org_directory').insert({owner_id:session.user.id,org_id:orgId,kind,name,meta}).select().single();
   if(error){if(error.code==='23505'){el.value='';return;}alert('Could not add: '+error.message);return;}
-  ORGDIR.push(data);el.value='';renderOrgDir();
+  ORGDIR.push(data);el.value='';buildMgrMap();renderOrgDir();
 }
 async function removeOrgDirItem(id,fromOnboard){
   const {error}=await sb.from('org_directory').delete().eq('id',id);
@@ -950,14 +985,9 @@ function addMemberRow(){
   const d=document.createElement('div');d.className='mrow';d.style.cssText='margin-top:8px;padding:10px;border:1px solid var(--line);border-radius:8px';
   d.innerHTML=`<div class="row">
     <div style="flex:2"><input type="text" class="mm-name" placeholder="Name"></div>
-    <div style="flex:1"><input type="text" class="mm-id" placeholder="ID (optional)"></div>
-    <div style="flex:1"><select class="mm-mgr">${orgDirOptions('manager')}</select></div></div>
-  <div class="row" style="margin-top:8px">
-    <div style="flex:1"><select class="mm-dept">${orgDirOptions('department')}</select></div>
-    <div style="flex:1"><select class="mm-cc">${orgDirOptions('cost_center')}</select></div>
-    <div style="flex:1"><select class="mm-title">${orgDirOptions('job_title')}</select></div>
-    <div style="flex:1"><input type="text" class="mm-start" placeholder="Start Week (optional)"></div></div>
-  <p class="help" style="margin:6px 0 0">No options? Add them once under the <b>Org</b> tab — they'll show up here for every future member.</p>`;
+    <div style="flex:1"><input type="text" class="mm-id" placeholder="ID"></div>
+    <div style="flex:2"><select class="mm-mgr">${orgDirOptions('manager')}</select></div></div>
+  <p class="help" style="margin:6px 0 0">Department, cost center & title are inherited from the manager's place in the org chart. Set those once under the <b>Org</b> tab.</p>`;
   document.getElementById('memberRows').appendChild(d);
 }
 async function createTeam(){
@@ -973,17 +1003,18 @@ async function createTeam(){
   TEAMS.push(team);
 
   if(pickedConn==='manual'){
-    // gather typed member rows
+    // Manual entry is intentionally lean: name, id, manager.
+    // Department / cost center / title are inherited from the manager's node in
+    // the org chart (MGR_MAP), not retyped per person.
     const rows=[...document.querySelectorAll('#memberRows .mrow')].map(r=>({
       name:r.querySelector('.mm-name').value.trim(),
       emp_id:r.querySelector('.mm-id').value.trim()||null,
       manager:r.querySelector('.mm-mgr')?.value.trim()||null,
-      department:r.querySelector('.mm-dept')?.value.trim()||null,
-      cost_center:r.querySelector('.mm-cc')?.value.trim()||null,
-      job_title:r.querySelector('.mm-title')?.value.trim()||null,
-      start_week:r.querySelector('.mm-start')?.value.trim()||null,
-    })).filter(m=>m.name).map(m=>({owner_id:session.user.id,org_id:orgId,team_id:team.id,name:m.name,emp_id:m.emp_id,
-      manager:m.manager,department:m.department,cost_center:m.cost_center,job_title:m.job_title,start_week:m.start_week}));
+    })).filter(m=>m.name).map(m=>{
+      const inh=MGR_MAP[m.manager]||{};
+      return {owner_id:session.user.id,org_id:orgId,team_id:team.id,name:m.name,emp_id:m.emp_id,
+        manager:m.manager,department:inh.department||null,cost_center:inh.cost_center||null,job_title:inh.job_title||null};
+    });
     if(rows.length){const {data:ins,error:e2}=await sb.from('members').insert(rows).select();
       if(e2){tmsg('Team made, member save failed: '+e2.message);} else MEMBERS.push(...(ins||[]));}
   }else if(pickedConn==='file'){
