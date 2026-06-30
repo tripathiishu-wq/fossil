@@ -6,6 +6,7 @@
 <title>RampIQ — Speed to Proficiency</title>
 <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%230a0c10'/%3E%3Cpath d='M21 46V18h13c6 0 10 3.5 10 9 0 4-2.2 6.8-5.7 8.1L46 46h-7.5l-6.7-10H28v10z M28 30h5.4c2.6 0 4.2-1.3 4.2-3.4S36 23 33.4 23H28z' fill='%2300e5a0'/%3E%3Cpath d='M40 14l8 0 0 8' stroke='%2300e5a0' stroke-width='3.5' fill='none' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <style>
   :root{
@@ -249,6 +250,11 @@
   <h1>Connections</h1><p class="lede">Link Workday or another HR tool to pull rosters. Connections are private to your account.</p>
   <div class="btnrow"><button class="btn sig" onclick="openConnect()">+ Add connection</button></div>
   <div id="connList"></div>
+  <div class="panel" style="margin-top:18px">
+    <h2>Import from Excel / Google Sheets</h2>
+    <p class="help" style="margin-top:0">No setup or credentials needed. While Workday access is pending, bring in a roster straight from a spreadsheet — upload a file, or paste a Google Sheet's published CSV link. Available as a source when you create a team.</p>
+    <div class="btnrow"><button class="btn alt sm" onclick="show('teams');openCreate();pickConn(document.querySelector('[data-conn=\'file\']'))">Create team from file →</button></div>
+  </div>
 </div></div>
 
 <!-- PLATFORM (owner only) -->
@@ -277,6 +283,17 @@
     <div id="srcConn"></div>
     <div class="src" data-conn="manual" onclick="pickConn(this)"><div class="src-ico">+</div>
       <div><b>Manual</b><div class="help">Add names &amp; IDs yourself</div></div></div>
+    <div class="src" data-conn="file" onclick="pickConn(this)"><div class="src-ico">XL</div>
+      <div><b>Import file</b><div class="help">Excel (.xlsx/.csv) or a Google Sheet link — while Workday access is pending</div></div></div>
+  </div>
+  <div id="fileImport" style="margin-top:14px;display:none">
+    <label>Excel / CSV file</label>
+    <input type="file" id="importFile" accept=".csv,.xlsx,.xls" onchange="handleImportFile(event)">
+    <p class="help" style="margin:8px 0">Or paste a Google Sheet "Publish to web → CSV" link:</p>
+    <div class="row"><div style="flex:2"><input type="text" id="importSheetUrl" placeholder="https://docs.google.com/.../pub?output=csv"></div>
+      <div><button class="btn alt sm" onclick="handleImportUrl()">Fetch</button></div></div>
+    <p class="help" style="margin-top:8px">Expected columns (any order, header names flexible): <b>Name</b>, <b>ID</b>, Manager, Department, Cost Center, Job Title, Start Week.</p>
+    <div id="importPreview"></div>
   </div>
   <div id="fieldPick" style="margin-top:14px"><label>Fields to pull</label>
     <div class="chk"><input type="checkbox" id="f_name" checked disabled><span>Name <span class="tag">required</span></span></div>
@@ -730,6 +747,10 @@ function openCreate(){
     <div class="src-ico">${c.kind==='workday'?'WD':'MCP'}</div><div><b>${c.kind==='workday'?'Workday':'MCP / HR'}</b>
     <div class="help">${c.base_url||''}</div></div></div>`).join('');
   pickedConn='manual';
+  IMPORTED_ROWS=[];
+  const ip=document.getElementById('importPreview');if(ip)ip.innerHTML='';
+  const ifEl=document.getElementById('importFile');if(ifEl)ifEl.value='';
+  const isU=document.getElementById('importSheetUrl');if(isU)isU.value='';
   NEW_TEAM_KIND='training';
   document.querySelectorAll('.kindopt').forEach(k=>k.classList.toggle('on',k.dataset.kind==='training'));
   document.getElementById('memberRows').innerHTML='';
@@ -742,8 +763,75 @@ function pickConn(el){document.querySelectorAll('#createModal .src').forEach(s=>
 // show manual member entry only when source is Manual; show field picker only for connections
 function reflectSource(){
   const manual=pickedConn==='manual';
+  const file=pickedConn==='file';
   document.getElementById('manualMembers').style.display=manual?'block':'none';
-  document.getElementById('fieldPick').style.display=manual?'none':'block';
+  document.getElementById('fieldPick').style.display=(manual||file)?'none':'block';
+  document.getElementById('fileImport').style.display=file?'block':'none';
+  if(!file){IMPORTED_ROWS=[];document.getElementById('importPreview').innerHTML='';}
+}
+
+/* ============ FILE IMPORT (Excel / CSV / Google Sheet) ============ */
+let IMPORTED_ROWS=[];
+const IMPORT_HEADERS={
+  name:['name','full name','trainee','employee name','employee'],
+  emp_id:['id','emp_id','employee id','employee_id','emp id'],
+  manager:['manager','reporting manager','manager name'],
+  department:['department','dept'],
+  cost_center:['cost center','cost_center','costcenter'],
+  job_title:['job title','title','role','designation'],
+  start_week:['start week','start date','hire date','joining date'],
+};
+function matchHeader(h){
+  const norm=String(h||'').trim().toLowerCase();
+  for(const [key,aliases] of Object.entries(IMPORT_HEADERS)){if(aliases.includes(norm))return key;}
+  return null;
+}
+function rowsFromSheet(json){
+  if(!json.length)return[];
+  const headerRow=json[0].map(matchHeader);
+  const rows=[];
+  for(let i=1;i<json.length;i++){
+    const r=json[i];if(!r||!r.length)continue;
+    const obj={};headerRow.forEach((key,idx)=>{if(key&&r[idx]!==undefined&&r[idx]!=='')obj[key]=String(r[idx]).trim();});
+    if(obj.name)rows.push(obj);
+  }
+  return rows;
+}
+function renderImportPreview(){
+  const el=document.getElementById('importPreview');
+  if(!IMPORTED_ROWS.length){el.innerHTML='<p class="msg err" style="display:block">No valid rows found — check that a Name column exists.</p>';return;}
+  const cols=['name','emp_id','manager','department','cost_center','job_title','start_week'];
+  el.innerHTML=`<p class="help" style="margin-top:10px"><b>${IMPORTED_ROWS.length} row(s) detected.</b> Preview (first 5):</p>
+    <div style="overflow:auto"><table><thead><tr>${cols.map(c=>`<th>${c}</th>`).join('')}</tr></thead>
+    <tbody>${IMPORTED_ROWS.slice(0,5).map(r=>`<tr>${cols.map(c=>`<td>${r[c]||''}</td>`).join('')}</tr>`).join('')}</tbody></table></div>`;
+}
+function handleImportFile(ev){
+  const f=ev.target.files[0];if(!f)return;
+  const reader=new FileReader();
+  reader.onload=(e)=>{
+    try{
+      let json;
+      if(f.name.toLowerCase().endsWith('.csv')){
+        const wb=XLSX.read(e.target.result,{type:'string'});
+        json=XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]],{header:1});
+      }else{
+        const wb=XLSX.read(e.target.result,{type:'binary'});
+        json=XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]],{header:1});
+      }
+      IMPORTED_ROWS=rowsFromSheet(json);renderImportPreview();
+    }catch(err){document.getElementById('importPreview').innerHTML='<p class="msg err" style="display:block">Could not read file: '+err.message+'</p>';}
+  };
+  if(f.name.toLowerCase().endsWith('.csv'))reader.readAsText(f);else reader.readAsBinaryString(f);
+}
+async function handleImportUrl(){
+  const url=document.getElementById('importSheetUrl').value.trim();if(!url)return;
+  try{
+    const res=await fetch(url);if(!res.ok)throw new Error('Could not fetch the sheet (check it is published to web as CSV)');
+    const text=await res.text();
+    const wb=XLSX.read(text,{type:'string'});
+    const json=XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]],{header:1});
+    IMPORTED_ROWS=rowsFromSheet(json);renderImportPreview();
+  }catch(err){document.getElementById('importPreview').innerHTML='<p class="msg err" style="display:block">'+err.message+'</p>';}
 }
 function addMemberRow(){
   const d=document.createElement('div');d.className='row';d.style.marginTop='8px';
@@ -758,7 +846,7 @@ async function createTeam(){
   const btn=document.getElementById('btnCreate');btn.disabled=true;
   const _t=btn.textContent;btn.textContent='Creating…';
   tmsg('Creating team…',true);
-  const src=pickedConn==='manual'?'manual':(CONNS.find(c=>c.id===pickedConn)?.kind||'manual');
+  const src=pickedConn==='manual'?'manual':pickedConn==='file'?'import':(CONNS.find(c=>c.id===pickedConn)?.kind||'manual');
   const orgId=CUR_ORG?CUR_ORG.id:null;
   const {data:team,error}=await sb.from('teams').insert({owner_id:session.user.id,org_id:orgId,name,source:src,fields,kind:NEW_TEAM_KIND}).select().single();
   if(error){tmsg('Create failed: '+error.message);btn.disabled=false;btn.textContent=_t;return;}
@@ -773,6 +861,13 @@ async function createTeam(){
     })).filter(m=>m.name).map(m=>({owner_id:session.user.id,org_id:orgId,team_id:team.id,name:m.name,emp_id:m.emp_id,manager:m.manager}));
     if(rows.length){const {data:ins,error:e2}=await sb.from('members').insert(rows).select();
       if(e2){tmsg('Team made, member save failed: '+e2.message);} else MEMBERS.push(...(ins||[]));}
+  }else if(pickedConn==='file'){
+    if(!IMPORTED_ROWS.length){tmsg('Team made, but no rows were imported — upload a file or fetch a sheet first.');btn.disabled=false;btn.textContent=_t;return;}
+    const rows=IMPORTED_ROWS.map(m=>({owner_id:session.user.id,org_id:orgId,team_id:team.id,
+      name:m.name,emp_id:m.emp_id||null,manager:m.manager||null,department:m.department||null,
+      cost_center:m.cost_center||null,job_title:m.job_title||null,start_week:m.start_week||null}));
+    const {data:ins,error:e3}=await sb.from('members').insert(rows).select();
+    if(e3){tmsg('Team made, import save failed: '+e3.message);} else MEMBERS.push(...(ins||[]));
   }else{
     tmsg('Pulling roster…',true);
     try{
