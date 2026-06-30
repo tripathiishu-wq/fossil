@@ -257,10 +257,12 @@
   <div class="panel" style="margin-top:18px;border-color:var(--accent)">
     <h2>Shortcut — import it all from a spreadsheet</h2>
     <p class="help" style="margin-top:0">Already have your roster in Excel or Google Sheets? Skip manual setup — import a file and RampIQ builds your departments, managers, and cost centers automatically from the data.</p>
-    <div class="btnrow"><button class="btn alt sm" onclick="show('teams');openCreate();pickConn(document.querySelector('[data-conn=\'file\']'))">Import from file →</button></div>
+    <div class="btnrow"><button class="btn alt sm" onclick="openCreate();pickConn(document.querySelector('[data-conn=\'file\']'))">Import from file →</button></div>
   </div>
-  <div class="btnrow" style="margin-top:22px;justify-content:space-between;display:flex">
-    <button class="btn alt" onclick="finishOnboarding()">Skip for now</button>
+  <div id="onboardGate" style="display:none;margin-top:18px;padding:12px 16px;border:1px solid var(--amber);border-radius:10px;background:rgba(255,180,84,.08)">
+    <b>Your organisation needs structure first.</b> Add at least one <b>department</b> and one <b>manager</b> above — the dashboard, teams, and assessments all build on your org chart. This is the foundation everything else inherits from.
+  </div>
+  <div class="btnrow" style="margin-top:22px;justify-content:flex-end;display:flex">
     <button class="btn sig" onclick="finishOnboarding()" id="onboardDone">Continue to dashboard →</button>
   </div>
   <p class="help" id="onboardCount" style="text-align:center;margin-top:12px"></p>
@@ -523,20 +525,37 @@ async function loadAll(){
   ]);
   TEAMS=t.data||[];MEMBERS=m.data||[];ASSESS=a.data||[];CONNS=c.data||[];ORGDIR=od.data||[];
   buildMgrMap();
-  // Structure-first onboarding: send brand-new orgs (or orgs with no structure yet)
-  // to the setup screen before the dashboard, so it never opens empty.
-  if(JUST_ONBOARDED || (ORGDIR.length===0 && TEAMS.length===0)){
+  // THE ORGANISATION PILLAR — structure-first, enforced.
+  // The dashboard and every feature are gated behind a real org chart:
+  // at least one department AND one manager must be defined. Until then,
+  // onboarding is the only screen the user can reach.
+  if(JUST_ONBOARDED || !orgStructureReady()){
     JUST_ONBOARDED=false;
     show('onboard');
   } else {
     renderDash();
   }
 }
+// Single source of truth for "is the organisation set up". The gate, the nav,
+// and onboarding-completion all read this — no scattered conditions.
+function orgStructureReady(){
+  const hasDept=ORGDIR.some(o=>o.kind==='department');
+  const hasMgr=ORGDIR.some(o=>o.kind==='manager');
+  return hasDept && hasMgr;
+}
 async function authHeader(){const {data}=await sb.auth.getSession();return 'Bearer '+data.session.access_token;}
 
 /* ============ NAV ============ */
 document.querySelectorAll('.nav button').forEach(b=>b.onclick=()=>show(b.dataset.v));
 function show(v){
+  // ENFORCE THE ORG PILLAR: until structure is ready, the only reachable screen
+  // is onboarding. Any attempt to navigate elsewhere is redirected back.
+  if(v!=='onboard' && !orgStructureReady()){
+    show('onboard');
+    const m=document.getElementById('onboardGate');
+    if(m){m.style.display='block';setTimeout(()=>{m.style.display='none';},4000);}
+    return;
+  }
   document.querySelectorAll('.nav button').forEach(b=>b.classList.toggle('on',b.dataset.v===v));
   document.querySelectorAll('.view').forEach(x=>x.classList.remove('on'));
   document.getElementById('v-'+v).classList.add('on');
@@ -819,7 +838,14 @@ async function addOnboardItem(kind){
   if(error){if(error.code==='23505'){el.value='';return;}alert('Could not add: '+error.message);return;}
   ORGDIR.push(data);el.value='';renderOnboard();
 }
-function finishOnboarding(){show('dash');}
+function finishOnboarding(){
+  if(!orgStructureReady()){
+    const m=document.getElementById('onboardGate');
+    if(m){m.style.display='block';}
+    return;
+  }
+  show('dash');
+}
 
 function renderConns(){
   const el=document.getElementById('connList');
