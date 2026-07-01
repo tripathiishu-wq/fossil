@@ -785,7 +785,12 @@ async function addOrgDirItem(kind){
     const title=document.getElementById('newmgr_title')?.value||'';
     meta={department:dept||null,job_title:title||null};
   }
-  const {data,error}=await sb.from('org_directory').insert({owner_id:session.user.id,org_id:orgId,kind,name,meta}).select().single();
+  // Try with meta; if the meta column doesn't exist yet (migration not run),
+  // fall back to inserting without it so the Org tab ALWAYS works.
+  let {data,error}=await sb.from('org_directory').insert({owner_id:session.user.id,org_id:orgId,kind,name,meta}).select().single();
+  if(error && /meta/i.test(error.message||'')){
+    ({data,error}=await sb.from('org_directory').insert({owner_id:session.user.id,org_id:orgId,kind,name}).select().single());
+  }
   if(error){if(error.code==='23505'){el.value='';return;}alert('Could not add: '+error.message);return;}
   ORGDIR.push(data);el.value='';buildMgrMap();renderOrgDir();
 }
