@@ -46,6 +46,14 @@
   .nav button:hover{color:var(--text);background:var(--card);}
   .nav button.on{color:var(--accent-text);background:var(--accent);}
   .who{font-family:var(--mono);font-size:11px;color:var(--muted);display:flex;align-items:center;gap:10px;}
+  .acctMenu{position:relative}
+  .acctBtn{background:var(--panel);border:1px solid var(--line);color:var(--text);font-family:var(--mono);font-size:11px;padding:7px 12px;border-radius:8px;cursor:pointer;display:flex;align-items:center;gap:6px}
+  .acctBtn:hover{border-color:var(--signal)}
+  .acctDrop{display:none;position:absolute;right:0;top:calc(100% + 6px);background:var(--panel);border:1px solid var(--line2,#2E3850);border-radius:12px;padding:6px;min-width:210px;z-index:100;box-shadow:0 12px 40px rgba(0,0,0,.5)}
+  .acctDrop.open{display:block}
+  .acctDrop button{display:block;width:100%;text-align:left;background:none;border:none;color:var(--text);font-size:13px;padding:9px 12px;border-radius:8px;cursor:pointer}
+  .acctDrop button:hover{background:var(--panel2,#1A2030)}
+  .acctSep{height:1px;background:var(--line);margin:6px 4px}
   .who button{background:var(--card);border:1px solid var(--line);color:var(--text);font-size:10px;
     padding:6px 11px;border-radius:6px;cursor:pointer;font-family:var(--mono);font-weight:600;transition:all .15s;}
   .who button:hover{border-color:var(--accent);color:var(--accent);}
@@ -191,12 +199,21 @@
     <button data-v="assess">Assess</button>
     <button data-v="reports">Reports</button>
     <button data-v="connect">Connections</button>
-    <button data-v="settings">Settings</button>
     <button data-v="platform" id="navPlatform" style="display:none;color:var(--signal);opacity:1">Platform</button>
   </div>
   <div class="who">
     <div class="themebar" id="themebar"></div>
-    <span id="whoEmail"></span><button onclick="signOut()">Sign out</button></div>
+    <div class="acctMenu" id="acctMenu">
+      <button class="acctBtn" onclick="toggleAcct(event)"><span id="whoEmail"></span> <span style="opacity:.6">▾</span></button>
+      <div class="acctDrop" id="acctDrop">
+        <button onclick="show('settings');closeAcct()">⚙️ Roles &amp; access</button>
+        <button onclick="show('org');closeAcct()">🏢 Org structure</button>
+        <button onclick="show('connect');closeAcct()">🔗 Connections</button>
+        <div class="acctSep"></div>
+        <button onclick="signOut()" style="color:var(--red)">Sign out</button>
+      </div>
+    </div>
+  </div>
 </div>
 
 <div id="appBody" style="display:none">
@@ -315,6 +332,10 @@
 <div class="modal-bg" id="createModal"><div class="modal">
   <h3>Create team</h3><p class="help" style="margin-top:0">Pull from a connection, or start empty.</p>
   <label>Team name</label><input type="text" id="newTeamName" placeholder="e.g. APAC SDR — Spring Cohort">
+  <div style="margin-top:14px"><label>Reports to (manager)</label>
+    <select id="newTeamManager">${''}</select>
+    <p class="help" style="margin-top:4px">The team belongs to this manager. They and everyone above them can see it.</p>
+  </div>
   <div style="margin-top:14px"><label>Team type</label>
     <div class="kindpick">
       <div class="kindopt on" data-kind="training" onclick="pickKind2(this)">
@@ -489,7 +510,14 @@ function visibleMembers(){
   return MEMBERS.slice();
 }
 function visibleTeamIds(){
-  const vis=visibleMembers();const s=new Set(vis.map(m=>m.team_id));return s;
+  const {access,me}=myAccess();
+  const s=new Set(visibleMembers().map(m=>m.team_id));
+  // A span user also sees teams that report directly to them (by team.manager),
+  // even if those teams have no members yet.
+  if(me&&access==='span'){
+    TEAMS.filter(t=>t.manager&&t.manager.toLowerCase()===me.name.toLowerCase()).forEach(t=>s.add(t.id));
+  }
+  return s;
 }
 function buildMgrMap(){
   MGR_MAP={};
@@ -561,6 +589,9 @@ async function signUp(){
     authMsg("Account created. Confirm via email, then sign in — your workspace '"+org+"' will be set up on first login.",true);
   }
 }
+function toggleAcct(e){e.stopPropagation();document.getElementById('acctDrop').classList.toggle('open');}
+function closeAcct(){document.getElementById('acctDrop').classList.remove('open');}
+document.addEventListener('click',()=>closeAcct());
 async function signOut(){
   // Sign out instantly: reload immediately, fire the network sign-out in the
   // background. No waiting "ages" on a slow round-trip.
@@ -1111,6 +1142,7 @@ function pickKind2(el){
 }
 function openCreate(){
   document.getElementById('createModal').classList.add('on');tmsg('');
+  const tm=document.getElementById('newTeamManager');if(tm)tm.innerHTML='<option value="">— select manager —</option>'+ORGDIR.filter(o=>o.kind==='manager').map(o=>`<option value="${o.name}">${o.name}</option>`).join('');
   document.getElementById('srcConn').innerHTML=CONNS.map(c=>`<div class="src" data-conn="${c.id}" onclick="pickConn(this)">
     <div class="src-ico">${c.kind==='workday'?'WD':'MCP'}</div><div><b>${c.kind==='workday'?'Workday':'MCP / HR'}</b>
     <div class="help">${c.base_url||''}</div></div></div>`).join('');
@@ -1206,7 +1238,8 @@ function addMemberRow(){
   d.innerHTML=`<div class="row">
     <div style="flex:2"><input type="text" class="mm-name" placeholder="Name"></div>
     <div style="flex:1"><input type="text" class="mm-id" placeholder="ID"></div>
-    <div style="flex:2"><select class="mm-mgr">${orgDirOptions('manager')}</select></div></div>
+    <div style="flex:2"><select class="mm-mgr">${orgDirOptions('manager')}</select></div>
+    <div style="flex:1"><select class="mm-blood"><option value="">Blood</option><option>A+</option><option>A-</option><option>B+</option><option>B-</option><option>O+</option><option>O-</option><option>AB+</option><option>AB-</option></select></div></div>
   <p class="help" style="margin:6px 0 0">Department, cost center & title are inherited from the manager's place in the org chart. Set those once under the <b>Org</b> tab.</p>`;
   document.getElementById('memberRows').appendChild(d);
 }
@@ -1218,7 +1251,11 @@ async function createTeam(){
   tmsg('Creating team…',true);
   const src=pickedConn==='manual'?'manual':pickedConn==='file'?'import':(CONNS.find(c=>c.id===pickedConn)?.kind||'manual');
   const orgId=CUR_ORG?CUR_ORG.id:null;
-  const {data:team,error}=await sb.from('teams').insert({owner_id:session.user.id,org_id:orgId,name,source:src,fields,kind:NEW_TEAM_KIND}).select().single();
+  const teamMgr=document.getElementById('newTeamManager')?.value||null;
+  let {data:team,error}=await sb.from('teams').insert({owner_id:session.user.id,org_id:orgId,name,source:src,fields,kind:NEW_TEAM_KIND,manager:teamMgr}).select().single();
+  if(error && /manager|column/i.test(error.message||'')){
+    ({data:team,error}=await sb.from('teams').insert({owner_id:session.user.id,org_id:orgId,name,source:src,fields,kind:NEW_TEAM_KIND}).select().single());
+  }
   if(error){tmsg('Create failed: '+error.message);btn.disabled=false;btn.textContent=_t;return;}
   TEAMS.push(team);
 
@@ -1230,10 +1267,11 @@ async function createTeam(){
       name:r.querySelector('.mm-name').value.trim(),
       emp_id:r.querySelector('.mm-id').value.trim()||null,
       manager:r.querySelector('.mm-mgr')?.value.trim()||null,
+      blood_group:r.querySelector('.mm-blood')?.value.trim()||null,
     })).filter(m=>m.name).map(m=>{
       const inh=MGR_MAP[m.manager]||{};
       return {owner_id:session.user.id,org_id:orgId,team_id:team.id,name:m.name,emp_id:m.emp_id,
-        manager:m.manager,department:inh.department||null,cost_center:inh.cost_center||null,job_title:inh.job_title||null};
+        manager:m.manager,department:inh.department||null,cost_center:inh.cost_center||null,job_title:inh.job_title||null,blood_group:m.blood_group||null};
     });
     if(rows.length){const {data:ins,error:e2}=await sb.from('members').insert(rows).select();
       if(e2){tmsg('Team made, member save failed: '+e2.message);} else MEMBERS.push(...(ins||[]));}
