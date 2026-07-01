@@ -483,7 +483,12 @@ async function signUp(){
     authMsg("Account created. Confirm via email, then sign in — your workspace '"+org+"' will be set up on first login.",true);
   }
 }
-async function signOut(){await sb.auth.signOut();location.reload();}
+async function signOut(){
+  // Sign out instantly: reload immediately, fire the network sign-out in the
+  // background. No waiting "ages" on a slow round-trip.
+  try{ sb.auth.signOut(); }catch(e){}
+  location.replace(location.pathname);
+}
 
 // Fresh-signup path: create the org + membership in one shot, no pre-check.
 async function createOrg(name){
@@ -510,9 +515,13 @@ function onAuthed(){
   document.getElementById('appBody').style.display='none';
   document.getElementById('whoEmail').textContent=session.user.email;
   if(session.user.email===PLATFORM_OWNER) document.getElementById('navPlatform').style.display='inline-block';
+  // Safety net: if loading stalls (slow network), reveal the app anyway within 4s
+  // so the user never stares at a blank screen.
+  setTimeout(()=>{const ab=document.getElementById('appBody');if(ab&&ab.style.display==='none'){ab.style.display='block';try{if(!orgStructureReady())show('onboard');else renderDash();}catch(e){}}},4000);
   loadAll();
 }
 async function loadAll(){
+ try{
   // resolve current org membership only if not already set (fresh signup sets it directly)
   if(!CUR_ORG||!CUR_ORG.id){
     const {data:mem}=await sb.from('org_members').select('org_id,organizations(id,name)').limit(1);
@@ -535,6 +544,13 @@ async function loadAll(){
   } else {
     renderDash();
   }
+ }catch(e){
+  // Never leave a blank screen: reveal the app and surface a recoverable state
+  // even if a query failed or timed out.
+  console.error('loadAll failed:',e);
+  const ab=document.getElementById('appBody');if(ab)ab.style.display='block';
+  try{ if(!orgStructureReady())show('onboard');else renderDash(); }catch(_){ show('onboard'); }
+ }
 }
 // Single source of truth for "is the organisation set up". The gate, the nav,
 // and onboarding-completion all read this — no scattered conditions.
