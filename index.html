@@ -247,26 +247,26 @@
 </div></div>
 
 <!-- ONBOARDING (structure-first) -->
-<div class="view" id="v-onboard"><div class="wrap" style="max-width:860px">
-  <div style="text-align:center;margin-bottom:8px">
-    <div class="tag" style="font-size:12px">Step 1 of 5 · Organisation → Teams → Assess → Reports → Dashboard</div>
-  </div>
-  <h1 id="onboardTitle">Let's build your org structure</h1>
-  <p class="lede">Define how your organisation is shaped — departments, cost centers, job titles, and managers. You'll assign people to these as you onboard teams, and your reporting views (by manager, by department) will be accurate from day one. <b>This takes two minutes and only happens once.</b></p>
-  <div class="grid" id="onboardGrid" style="grid-template-columns:repeat(auto-fit,minmax(260px,1fr));margin-top:8px"></div>
-  <div class="panel" style="margin-top:18px;border-color:var(--accent)">
-    <h2>Shortcut — import it all from a spreadsheet</h2>
-    <p class="help" style="margin-top:0">Already have your roster in Excel or Google Sheets? Skip manual setup — import a file and RampIQ builds your departments, managers, and cost centers automatically from the data.</p>
+<div class="view" id="v-onboard"><div class="wrap" style="max-width:960px">
+  <div id="journeyRibbon" style="margin:8px 0 26px"></div>
+  <div style="margin-bottom:4px" class="tag" >Organisation setup</div>
+  <h1 id="onboardTitle" style="font-size:38px;letter-spacing:-.02em">Build your organisation</h1>
+  <p class="lede" style="max-width:640px">Every report, reporting line, and assessment in RampIQ is built on your org chart. Define it once — departments, cost centers, job titles, and the managers people report to — and everything downstream stays accurate. <b>Two minutes, and it only happens once.</b></p>
+  <div class="grid" id="onboardGrid" style="grid-template-columns:repeat(auto-fit,minmax(280px,1fr));margin-top:20px;gap:16px"></div>
+  <div class="panel" style="margin-top:20px;border-color:var(--accent);background:linear-gradient(135deg,rgba(79,124,255,.06),transparent)">
+    <h2 style="margin-bottom:4px">⚡ Shortcut — import from a spreadsheet</h2>
+    <p class="help" style="margin-top:0">Already have your roster in Excel or Google Sheets? Import it and RampIQ builds your departments, managers, and cost centers automatically.</p>
     <div class="btnrow"><button class="btn alt sm" onclick="openCreate();pickConn(document.querySelector('[data-conn=\'file\']'))">Import from file →</button></div>
   </div>
-  <div id="onboardGate" style="display:none;margin-top:18px;padding:12px 16px;border:1px solid var(--amber);border-radius:10px;background:rgba(255,180,84,.08)">
-    <b>Your organisation needs structure first.</b> Add at least one <b>department</b> and one <b>manager</b> above — the dashboard, teams, and assessments all build on your org chart. This is the foundation everything else inherits from.
+  <div id="onboardGate" style="display:none;margin-top:18px;padding:14px 18px;border:1px solid var(--amber);border-radius:12px;background:rgba(255,180,84,.08)">
+    <b>Your organisation needs structure first.</b> Add at least one <b>department</b> and one <b>manager</b> — the dashboard, teams, and assessments all build on your org chart.
   </div>
-  <div class="btnrow" style="margin-top:22px;justify-content:flex-end;display:flex">
-    <button class="btn sig" onclick="finishOnboarding()" id="onboardDone">Continue to dashboard →</button>
+  <div class="btnrow" style="margin-top:26px;justify-content:flex-end;display:flex">
+    <button class="btn sig" onclick="finishOnboarding()" id="onboardDone" style="padding:13px 26px;font-size:13px">Continue → build a team</button>
   </div>
-  <p class="help" id="onboardCount" style="text-align:center;margin-top:12px"></p>
+  <p class="help" id="onboardCount" style="text-align:center;margin-top:14px"></p>
 </div></div>
+
 
 <!-- ORG DIRECTORY -->
 <div class="view" id="v-org"><div class="wrap">
@@ -505,7 +505,9 @@ function setOrg(id,name){CUR_ORG={id,name};const el=document.getElementById('who
 function onAuthed(){
   document.getElementById('auth').style.display='none';
   document.getElementById('shell').style.display='flex';
-  document.getElementById('appBody').style.display='block';
+  // Keep the body hidden until the org gate decides where to land — prevents
+  // any flash of the dashboard before onboarding for un-set-up orgs.
+  document.getElementById('appBody').style.display='none';
   document.getElementById('whoEmail').textContent=session.user.email;
   if(session.user.email===PLATFORM_OWNER) document.getElementById('navPlatform').style.display='inline-block';
   loadAll();
@@ -525,10 +527,8 @@ async function loadAll(){
   ]);
   TEAMS=t.data||[];MEMBERS=m.data||[];ASSESS=a.data||[];CONNS=c.data||[];ORGDIR=od.data||[];
   buildMgrMap();
+  document.getElementById('appBody').style.display='block';
   // THE ORGANISATION PILLAR — structure-first, enforced.
-  // The dashboard and every feature are gated behind a real org chart:
-  // at least one department AND one manager must be defined. Until then,
-  // onboarding is the only screen the user can reach.
   if(JUST_ONBOARDED || !orgStructureReady()){
     JUST_ONBOARDED=false;
     show('onboard');
@@ -779,19 +779,25 @@ function renderOrgDir(){
 async function addOrgDirItem(kind){
   const el=document.getElementById('new_'+kind);const name=el.value.trim();if(!name)return;
   const orgId=CUR_ORG?CUR_ORG.id:null;
-  let meta={};
+  // Insert ONLY columns guaranteed to exist. This can't fail on a missing
+  // optional column — the Org tab always works regardless of migrations.
+  const base={owner_id:session.user.id,org_id:orgId,kind,name};
+  let {data,error}=await sb.from('org_directory').insert(base).select().single();
+  if(error){
+    if(error.code==='23505'){el.value='';return;}
+    alert('Could not add "'+name+'": '+(error.message||error.code||'unknown error')+
+      (error.hint?('\nHint: '+error.hint):''));
+    return;
+  }
+  // Best-effort: attach manager's department/title if the meta column exists.
   if(kind==='manager'){
     const dept=document.getElementById('newmgr_dept')?.value||'';
     const title=document.getElementById('newmgr_title')?.value||'';
-    meta={department:dept||null,job_title:title||null};
+    if(dept||title){
+      const {error:mErr}=await sb.from('org_directory').update({meta:{department:dept||null,job_title:title||null}}).eq('id',data.id);
+      if(!mErr)data.meta={department:dept||null,job_title:title||null};
+    }
   }
-  // Try with meta; if the meta column doesn't exist yet (migration not run),
-  // fall back to inserting without it so the Org tab ALWAYS works.
-  let {data,error}=await sb.from('org_directory').insert({owner_id:session.user.id,org_id:orgId,kind,name,meta}).select().single();
-  if(error && /meta/i.test(error.message||'')){
-    ({data,error}=await sb.from('org_directory').insert({owner_id:session.user.id,org_id:orgId,kind,name}).select().single());
-  }
-  if(error){if(error.code==='23505'){el.value='';return;}alert('Could not add: '+error.message);return;}
   ORGDIR.push(data);el.value='';buildMgrMap();renderOrgDir();
 }
 async function removeOrgDirItem(id,fromOnboard){
@@ -815,7 +821,27 @@ function orgDirOptions(kind,selected){
 }
 
 /* ===== ONBOARDING (structure-first) ===== */
+// Premium 5-station journey ribbon — the visual spine of onboarding.
+const JOURNEY_STATIONS=[['org','Organisation'],['teams','Teams'],['assess','Assess'],['reports','Reports'],['dashboard','Dashboard']];
+function renderJourneyRibbon(active){
+  const el=document.getElementById('journeyRibbon');if(!el)return;
+  const ai=JOURNEY_STATIONS.findIndex(s=>s[0]===active);
+  el.innerHTML=`<div style="display:flex;align-items:center;gap:0">${JOURNEY_STATIONS.map((s,i)=>{
+    const done=i<ai,cur=i===ai;
+    const dot=done?'var(--green)':cur?'var(--accent)':'var(--line2,#2E3850)';
+    const txt=cur?'var(--text,#EAEEF6)':done?'var(--green)':'var(--muted)';
+    const line=i<JOURNEY_STATIONS.length-1?`<div style="flex:1;height:2px;background:${i<ai?'var(--green)':'var(--line2,#2E3850)'}"></div>`:'';
+    return `<div style="display:flex;align-items:center;${i<JOURNEY_STATIONS.length-1?'flex:1':''}">
+      <div style="display:flex;flex-direction:column;align-items:center;gap:6px;min-width:80px">
+        <div style="width:${cur?'14px':'11px'};height:${cur?'14px':'11px'};border-radius:50%;background:${done||cur?dot:'transparent'};border:2px solid ${dot};box-shadow:${cur?'0 0 0 4px rgba(79,124,255,.15)':'none'};display:flex;align-items:center;justify-content:center">
+          ${done?'<span style="color:#0B0E14;font-size:8px;font-weight:900">✓</span>':''}
+        </div>
+        <span style="font-family:var(--mono,monospace);font-size:10px;letter-spacing:.12em;text-transform:uppercase;color:${txt};font-weight:600">${s[1]}</span>
+      </div>${line}</div>`;
+  }).join('')}</div>`;
+}
 function renderOnboard(){
+  renderJourneyRibbon('org');
   const grid=document.getElementById('onboardGrid');
   grid.innerHTML=ORGDIR_KINDS.map(([kind,label])=>{
     const items=ORGDIR.filter(o=>o.kind===kind);
