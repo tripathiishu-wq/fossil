@@ -655,8 +655,14 @@ function fillTeamMembers(){
   aMember.innerHTML='<option value="">— select —</option>'+list.map(m=>`<option value="${m.id}">${m.name} · ${m.emp_id||''}</option>`).join('');
 }
 function fillMember(){
+  // Switching roster member = clean slate. Re-render the assess body so all
+  // scoring inputs (KPIs, behaviours, milestones) reset to defaults, then
+  // stamp the new member's identity. No stale scores from the previous agent.
+  renderAssessBody();
   const m=MEMBERS.find(x=>x.id===aMember.value);
   if(m){tname.value=`${m.name}${m.emp_id?' · '+m.emp_id:''}`;if(m.start_week)cohort.value=m.start_week;}
+  // Clear any previously rendered result card.
+  const rb=document.getElementById('assessResult');if(rb)rb.innerHTML='';
 }
 async function run(){
   const name=tname.value.trim()||"Unnamed",coh=(document.getElementById('cohort')?.value||'').trim();
@@ -790,13 +796,16 @@ async function addOrgDirItem(kind){
     return;
   }
   // Best-effort: attach manager's department/title if the meta column exists.
+  // Wrapped so a failed/absent meta update can NEVER block the manager save.
   if(kind==='manager'){
-    const dept=document.getElementById('newmgr_dept')?.value||'';
-    const title=document.getElementById('newmgr_title')?.value||'';
-    if(dept||title){
-      const {error:mErr}=await sb.from('org_directory').update({meta:{department:dept||null,job_title:title||null}}).eq('id',data.id);
-      if(!mErr)data.meta={department:dept||null,job_title:title||null};
-    }
+    try{
+      const dept=document.getElementById('newmgr_dept')?.value||'';
+      const title=document.getElementById('newmgr_title')?.value||'';
+      if(dept||title){
+        const {error:mErr}=await sb.from('org_directory').update({meta:{department:dept||null,job_title:title||null}}).eq('id',data.id);
+        if(!mErr)data.meta={department:dept||null,job_title:title||null};
+      }
+    }catch(e){/* meta column may not exist yet — manager still saved fine */}
   }
   ORGDIR.push(data);el.value='';buildMgrMap();renderOrgDir();
 }
@@ -814,6 +823,23 @@ async function ensureOrgDirValue(kind,name){
   const orgId=CUR_ORG?CUR_ORG.id:null;
   const {data,error}=await sb.from('org_directory').insert({owner_id:session.user.id,org_id:orgId,kind,name}).select().single();
   if(!error&&data)ORGDIR.push(data);
+}
+// FAST: collect every new (kind,name) across a roster and insert them all in a
+// SINGLE round-trip instead of 4-awaits-per-member. Turns 80 calls into 1.
+async function ensureOrgDirBatch(rows){
+  const orgId=CUR_ORG?CUR_ORG.id:null;
+  const want=[];const seen=new Set();
+  const add=(kind,name)=>{
+    if(!name)return;
+    const key=kind+'|'+name.toLowerCase();
+    if(seen.has(key))return;seen.add(key);
+    if(ORGDIR.some(o=>o.kind===kind&&o.name.toLowerCase()===name.toLowerCase()))return;
+    want.push({owner_id:session.user.id,org_id:orgId,kind,name});
+  };
+  rows.forEach(m=>{add('manager',m.manager);add('department',m.department);add('cost_center',m.cost_center);add('job_title',m.job_title);});
+  if(!want.length)return;
+  const {data}=await sb.from('org_directory').insert(want).select();
+  if(data)ORGDIR.push(...data);
 }
 function orgDirOptions(kind,selected){
   const items=ORGDIR.filter(o=>o.kind===kind);
@@ -1089,8 +1115,7 @@ async function createTeam(){
       cost_center:m.cost_center||null,job_title:m.job_title||null,start_week:m.start_week||null}));
     const {data:ins,error:e3}=await sb.from('members').insert(rows).select();
     if(e3){tmsg('Team made, import save failed: '+e3.message);} else {MEMBERS.push(...(ins||[]));
-      for(const m of rows){await ensureOrgDirValue('manager',m.manager);await ensureOrgDirValue('department',m.department);
-        await ensureOrgDirValue('cost_center',m.cost_center);await ensureOrgDirValue('job_title',m.job_title);}
+      await ensureOrgDirBatch(rows);
       buildMgrMap();
       // Import just built the org chart from the file — if that satisfies the
       // pillar, proceed; otherwise stay on onboarding so structure stays first.
@@ -1109,8 +1134,7 @@ async function createTeam(){
         job_title:m.job_title||m.role||null,manager:m.manager||null,manager_id:m.manager_id||null,
         wd_worker_id:m.wd_worker_id||null,department:m.department||null,cost_center:m.cost_center||null}));
       if(rows.length){const {data:ins}=await sb.from('members').insert(rows).select();MEMBERS.push(...(ins||[]));
-        for(const m of rows){await ensureOrgDirValue('manager',m.manager);await ensureOrgDirValue('department',m.department);
-          await ensureOrgDirValue('cost_center',m.cost_center);await ensureOrgDirValue('job_title',m.job_title);}}
+        await ensureOrgDirBatch(rows);}
     }catch(e){tmsg('Team made, but roster pull failed: '+e.message);btn.disabled=false;btn.textContent=_t;setTimeout(()=>{closeCreate();show('teams');},1400);return;}
   }
   btn.disabled=false;btn.textContent=_t;closeCreate();show('teams');
