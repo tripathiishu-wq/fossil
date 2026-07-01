@@ -191,6 +191,7 @@
     <button data-v="assess">Assess</button>
     <button data-v="reports">Reports</button>
     <button data-v="connect">Connections</button>
+    <button data-v="settings">Settings</button>
     <button data-v="platform" id="navPlatform" style="display:none;color:var(--signal);opacity:1">Platform</button>
   </div>
   <div class="who">
@@ -284,6 +285,20 @@
     <p class="help" style="margin-top:0">No setup or credentials needed. While Workday access is pending, bring in a roster straight from a spreadsheet — upload a file, or paste a Google Sheet's published CSV link. Available as a source when you create a team.</p>
     <div class="btnrow"><button class="btn alt sm" onclick="show('teams');openCreate();pickConn(document.querySelector('[data-conn=\'file\']'))">Create team from file →</button></div>
   </div>
+</div></div>
+
+<!-- SETTINGS — Roles & Access (bands) -->
+<div class="view" id="v-settings"><div class="wrap">
+  <h1>Roles &amp; access</h1>
+  <p class="lede">Every job title maps to a <b>band</b>. Bands decide what a person can see — their level and below, never sideways or up. Define your own titles; the bands stay universal.</p>
+  <div class="grid" id="bandLegend" style="grid-template-columns:repeat(auto-fit,minmax(200px,1fr));margin:8px 0 20px"></div>
+  <div class="panel">
+    <h2>Job titles → bands</h2>
+    <p class="help" style="margin-top:0">Change a title's band and everyone with that title inherits the new access.</p>
+    <div id="titleBandRows" style="margin-top:12px"></div>
+  </div>
+  <div class="btnrow" style="margin-top:16px"><button class="btn alt sm" onclick="addBand()">+ Add band (RFP)</button></div>
+  <p class="help" style="margin-top:12px">Band 1 grants full Assignee powers — multiple people can hold it. Your master profile is always Band 1 and can't be locked out.</p>
 </div></div>
 
 <!-- PLATFORM (owner only) -->
@@ -413,6 +428,69 @@ let JUST_ONBOARDED=false;
 // Manager → inherited attributes (department/cost_center/title), learned from
 // the org chart. New manual members inherit their manager's node automatically.
 let MGR_MAP={};
+// ===== ACCESS BANDS (enterprise IAM: title → band → entitlement) =====
+// Bands are the access primitive. Start with 3; admins can add more (RFP).
+//   Band 1 = Full + Assignee powers (multiple "Top Guns" allowed)
+//   Band 2 = Span  (own org-chart subtree)
+//   Band 3 = Self  (only themselves)
+let BANDS=[
+  {id:1,name:'Band 1',access:'full',note:'Full access · Assignee'},
+  {id:2,name:'Band 2',access:'span',note:'Own span (subtree)'},
+  {id:3,name:'Band 3',access:'self',note:'Self only'},
+];
+// job_title (lowercased) -> band id. Titles inherit their band.
+let TITLE_BAND={};
+// Sensible defaults inferred from common title keywords; admin overrides in Settings.
+function inferBand(title){
+  const t=(title||'').toLowerCase();
+  if(/agm|director|head|vp|chief|gm\b|general manager/.test(t))return 1;
+  if(/manager|lead|supervisor|flm|front line/.test(t))return 2;
+  return 3;
+}
+function titleBand(title){
+  const key=(title||'').toLowerCase().trim();
+  if(TITLE_BAND[key])return TITLE_BAND[key];
+  return inferBand(title);
+}
+function bandAccess(bandId){const b=BANDS.find(x=>x.id===bandId);return b?b.access:'self';}
+
+// The logged-in user's own member record + band (matched by email→name is unreliable,
+// so for the demo the MASTER profile is always Band-1/full; others resolve by title).
+function myAccess(){
+  // Master profile / platform owner / org creator = full Assignee, always.
+  if(!session||!session.user)return {access:'full',me:null};
+  // Try to find a member record matching this user (by emp/email if present).
+  const me=MEMBERS.find(m=>m.email&&m.email.toLowerCase()===session.user.email.toLowerCase());
+  if(!me)return {access:'full',me:null}; // no member row = admin/assignee view
+  return {access:bandAccess(titleBand(me.job_title)),me};
+}
+
+// Everyone under a manager node, walking the org-chart subtree.
+function subtreeMemberIds(rootManagerName){
+  const out=new Set();
+  const kids=(mgr)=>MEMBERS.filter(m=>m.manager&&m.manager.toLowerCase()===(mgr||'').toLowerCase());
+  const walk=(mgr)=>{kids(mgr).forEach(m=>{if(!out.has(m.id)){out.add(m.id);walk(m.name);}});};
+  walk(rootManagerName);
+  return out;
+}
+
+// THE ENGINE: the members the current user is allowed to see.
+// dashboard, teams, assess, reports all read from this — one source of truth.
+function visibleMembers(){
+  const {access,me}=myAccess();
+  if(access==='full')return MEMBERS.slice();
+  if(access==='self')return me?MEMBERS.filter(m=>m.id===me.id):[];
+  // span: my own subtree (I'm a manager node) + myself
+  if(me){
+    const ids=subtreeMemberIds(me.name);
+    ids.add(me.id);
+    return MEMBERS.filter(m=>ids.has(m.id));
+  }
+  return MEMBERS.slice();
+}
+function visibleTeamIds(){
+  const vis=visibleMembers();const s=new Set(vis.map(m=>m.team_id));return s;
+}
 function buildMgrMap(){
   MGR_MAP={};
   // 1) Primary: managers defined on the org chart carry their own attributes.
@@ -578,6 +656,7 @@ function show(v){
   if(v==='dash')renderDash();if(v==='teams')renderTeams();if(v==='assess')renderAssessBody();
   if(v==='reports')renderReports();if(v==='assess')renderTeamSelect();
   if(v==='connect')renderConns();if(v==='platform')renderPlatform();if(v==='org')renderOrgDir();
+  if(v==='settings')renderSettings();
   if(v==='onboard')renderOnboard();
   window.scrollTo(0,0);
 }
@@ -667,7 +746,8 @@ function fillTeamMembers(){
   const team=TEAMS.find(t=>t.id===aTeam.value);
   ASSESS_MODE=(team&&team.kind==='operations')?'operations':'training';
   renderAssessBody();
-  const list=MEMBERS.filter(m=>m.team_id===aTeam.value);
+  const vis=new Set(visibleMembers().map(m=>m.id));
+  const list=MEMBERS.filter(m=>m.team_id===aTeam.value && vis.has(m.id));
   aMember.innerHTML='<option value="">— select —</option>'+list.map(m=>`<option value="${m.id}">${m.name} · ${m.emp_id||''}</option>`).join('');
 }
 function fillMember(){
@@ -928,6 +1008,39 @@ function finishOnboarding(){
   show('dash');
 }
 
+// ===== SETTINGS: Roles & Access (bands) =====
+const ACCESS_LABEL={full:'Full · Assignee',span:'Span (subtree)',self:'Self only'};
+function renderSettings(){
+  const leg=document.getElementById('bandLegend');
+  leg.innerHTML=BANDS.map(b=>`<div class="panel" style="padding:14px 16px">
+    <div class="tag" style="color:var(--signal)">${b.name}</div>
+    <div style="font-size:13px;color:var(--muted);margin-top:6px">${b.note}</div>
+  </div>`).join('');
+  // unique titles from org chart + members
+  const titles=[...new Set([
+    ...ORGDIR.filter(o=>o.kind==='job_title').map(o=>o.name),
+    ...MEMBERS.map(m=>m.job_title).filter(Boolean),
+  ])];
+  const rows=document.getElementById('titleBandRows');
+  if(!titles.length){rows.innerHTML='<p class="help">No job titles yet — add them under the Org tab.</p>';return;}
+  rows.innerHTML=titles.map(t=>{
+    const bid=titleBand(t);
+    const count=MEMBERS.filter(m=>(m.job_title||'').toLowerCase()===t.toLowerCase()).length;
+    return `<div class="metric" style="align-items:center">
+      <span>${t}<div class="help" style="margin-top:2px">${count} ${count===1?'person':'people'} · ${ACCESS_LABEL[bandAccess(bid)]}</div></span>
+      <span><select onchange="setTitleBand('${t.replace(/'/g,"\\'")}',this.value)">${BANDS.map(b=>`<option value="${b.id}" ${b.id===bid?'selected':''}>${b.name}</option>`).join('')}</select></span>
+    </div>`;
+  }).join('');
+}
+function setTitleBand(title,bandId){
+  TITLE_BAND[title.toLowerCase().trim()]=parseInt(bandId,10);
+  renderSettings();
+}
+function addBand(){
+  const nextId=Math.max(...BANDS.map(b=>b.id))+1;
+  BANDS.push({id:nextId,name:'Band '+nextId,access:'self',note:'Custom band — set access'});
+  renderSettings();
+}
 function renderConns(){
   const el=document.getElementById('connList');
   el.innerHTML=CONNS.length?CONNS.map(c=>`<div class="panel"><div style="display:flex;justify-content:space-between;align-items:center">
@@ -1157,8 +1270,11 @@ async function createTeam(){
 }
 function renderTeams(){
   const el=document.getElementById('teamList');
-  if(!TEAMS.length){el.innerHTML='<div class="empty">No teams yet.</div>';return;}
-  el.innerHTML=TEAMS.map(t=>{const mem=MEMBERS.filter(m=>m.team_id===t.id);
+  const {access}=myAccess();
+  const visTeams=access==='full'?TEAMS:TEAMS.filter(t=>visibleTeamIds().has(t.id));
+  if(!visTeams.length){el.innerHTML='<div class="empty">No teams in your view.</div>';return;}
+  const vis=new Set(visibleMembers().map(m=>m.id));
+  el.innerHTML=visTeams.map(t=>{const mem=MEMBERS.filter(m=>m.team_id===t.id && (access==='full'||vis.has(m.id)));
     const assessed=ASSESS.filter(a=>a.team_id===t.id).length;
     return `<div class="panel" style="cursor:pointer" onclick="openTeam('${t.id}')">
       <div style="display:flex;justify-content:space-between;align-items:center">
