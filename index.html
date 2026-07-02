@@ -203,6 +203,7 @@
   </div>
   <div class="who">
     <div class="themebar" id="themebar"></div>
+    <div id="viewAsWrap" style="display:none"></div>
     <div class="acctMenu" id="acctMenu">
       <button class="acctBtn" onclick="toggleAcct(event)"><span id="whoEmail"></span> <span style="opacity:.6">▾</span></button>
       <div class="acctDrop" id="acctDrop">
@@ -477,20 +478,38 @@ function bandAccess(bandId){const b=BANDS.find(x=>x.id===bandId);return b?b.acce
 
 // The logged-in user's own member record + band (matched by email→name is unreliable,
 // so for the demo the MASTER profile is always Band-1/full; others resolve by title).
+// ===== VIEW AS (demo the access model without separate logins) =====
+// Band-1 users can preview the app through any org-chart person's eyes.
+// null = my real access. Otherwise {name, job_title} of the impersonated node.
+let VIEW_AS=null;
 function myAccess(){
   // Master profile / platform owner / org creator = full Assignee, always.
   if(!session||!session.user)return {access:'full',me:null};
+  // View-as preview overrides (only reachable from a full-access session).
+  if(VIEW_AS){
+    return {access:bandAccess(titleBand(VIEW_AS.job_title)),me:VIEW_AS,preview:true};
+  }
   // Try to find a member record matching this user (by emp/email if present).
   const me=MEMBERS.find(m=>m.email&&m.email.toLowerCase()===session.user.email.toLowerCase());
   if(!me)return {access:'full',me:null}; // no member row = admin/assignee view
   return {access:bandAccess(titleBand(me.job_title)),me};
 }
 
-// Everyone under a manager node, walking the org-chart subtree.
+// Everyone under a manager node. Walks BOTH graphs:
+//  - members.manager  (roster reporting lines)
+//  - org_directory meta.reports_to (leadership chain: AGM→Director→Manager→FLM)
+// so a Manager's span includes their FLMs' entire rosters.
 function subtreeMemberIds(rootManagerName){
   const out=new Set();
+  const seenMgrs=new Set();
   const kids=(mgr)=>MEMBERS.filter(m=>m.manager&&m.manager.toLowerCase()===(mgr||'').toLowerCase());
-  const walk=(mgr)=>{kids(mgr).forEach(m=>{if(!out.has(m.id)){out.add(m.id);walk(m.name);}});};
+  const dirKids=(mgr)=>(ORGDIR||[]).filter(o=>o.kind==='manager'&&(dirMeta(o).reports_to||'').toLowerCase()===(mgr||'').toLowerCase());
+  const walk=(mgr)=>{
+    const k=(mgr||'').toLowerCase();
+    if(seenMgrs.has(k))return;seenMgrs.add(k);
+    kids(mgr).forEach(m=>{if(!out.has(m.id)){out.add(m.id);walk(m.name);}});
+    dirKids(mgr).forEach(o=>walk(o.name));
+  };
   walk(rootManagerName);
   return out;
 }
@@ -500,11 +519,15 @@ function subtreeMemberIds(rootManagerName){
 function visibleMembers(){
   const {access,me}=myAccess();
   if(access==='full')return MEMBERS.slice();
-  if(access==='self')return me?MEMBERS.filter(m=>m.id===me.id):[];
-  // span: my own subtree (I'm a manager node) + myself
+  if(access==='self'){
+    if(me&&me.id)return MEMBERS.filter(m=>m.id===me.id);
+    if(me&&me.name)return MEMBERS.filter(m=>m.name.toLowerCase()===me.name.toLowerCase());
+    return [];
+  }
+  // span: my own subtree (I'm a manager node) + myself if I'm on the roster
   if(me){
     const ids=subtreeMemberIds(me.name);
-    ids.add(me.id);
+    if(me.id)ids.add(me.id);
     return MEMBERS.filter(m=>ids.has(m.id));
   }
   return MEMBERS.slice();
@@ -512,19 +535,32 @@ function visibleMembers(){
 function visibleTeamIds(){
   const {access,me}=myAccess();
   const s=new Set(visibleMembers().map(m=>m.team_id));
-  // A span user also sees teams that report directly to them (by team.manager),
-  // even if those teams have no members yet.
-  if(me&&access==='span'){
-    TEAMS.filter(t=>t.manager&&t.manager.toLowerCase()===me.name.toLowerCase()).forEach(t=>s.add(t.id));
+  if(me&&(access==='span'||access==='self')){
+    const my=(me.name||'').toLowerCase();
+    // Teams that report directly to me (by team.manager), even if empty.
+    TEAMS.filter(t=>t.manager&&t.manager.toLowerCase()===my).forEach(t=>s.add(t.id));
+    // DELEGATION: teams explicitly assigned to me (team.assigned_to).
+    TEAMS.filter(t=>t.assigned_to&&t.assigned_to.toLowerCase()===my).forEach(t=>s.add(t.id));
   }
   return s;
+}
+// Normalise directory meta: seeds/imports may use dept|department,
+// cost_centre|cost_center, title|job_title. One reader, both dialects.
+function dirMeta(o){
+  const m=(o&&o.meta)||{};
+  return {
+    department:m.department||m.dept||null,
+    cost_center:m.cost_center||m.cost_centre||null,
+    job_title:m.job_title||m.title||null,
+    reports_to:m.reports_to||null,
+  };
 }
 function buildMgrMap(){
   MGR_MAP={};
   // 1) Primary: managers defined on the org chart carry their own attributes.
   (ORGDIR||[]).filter(o=>o.kind==='manager').forEach(o=>{
-    const m=o.meta||{};
-    MGR_MAP[o.name]={department:m.department||null,cost_center:m.cost_center||null,job_title:m.job_title||null};
+    const m=dirMeta(o);
+    MGR_MAP[o.name]={department:m.department,cost_center:m.cost_center,job_title:m.job_title};
   });
   // 2) Fallback: learn from any existing member that already has manager + attributes.
   (MEMBERS||[]).forEach(m=>{
@@ -537,6 +573,51 @@ function buildMgrMap(){
   });
 }
 let CUR_ORG=null;          // {id,name} the user's active organisation
+
+// ===== VIEW-AS UI (header control, Band-1 only) =====
+// Impersonate any org-chart node to DEMO band scoping without extra logins.
+function renderViewAs(){
+  const w=document.getElementById('viewAsWrap');if(!w)return;
+  // Only a real full-access session may preview; never show inside a preview.
+  const realFull=session&&session.user&&!MEMBERS.find(m=>m.email&&m.email.toLowerCase()===session.user.email.toLowerCase());
+  if(!realFull&&!VIEW_AS){w.style.display='none';return;}
+  w.style.display='block';
+  const mgrs=(ORGDIR||[]).filter(o=>o.kind==='manager');
+  const opts=mgrs.map(o=>{
+    const m=dirMeta(o);const t=m.job_title||'Manager';const b=titleBand(t);
+    const sel=VIEW_AS&&VIEW_AS.name===o.name?'selected':'';
+    return `<option value="${o.name}" ${sel}>${o.name} · ${t} · Band ${b}</option>`;
+  }).join('');
+  w.innerHTML=`<select onchange="setViewAs(this.value)" style="width:auto;padding:6px 10px;font-family:var(--mono);font-size:11px;${VIEW_AS?'border-color:var(--amber);color:var(--amber)':''}">
+    <option value="">👁 View as: Assignee (me)</option>${opts}</select>`;
+}
+function setViewAs(name){
+  if(!name){VIEW_AS=null;}
+  else{
+    const o=(ORGDIR||[]).find(x=>x.kind==='manager'&&x.name===name);
+    if(o){const m=dirMeta(o);VIEW_AS={name:o.name,job_title:m.job_title||'Manager'};}
+  }
+  renderViewAs();
+  // Re-render whatever view is on screen through the new lens.
+  const cur=document.querySelector('.nav button.on');
+  show(cur?cur.dataset.v:'dash');
+}
+
+// ===== DELEGATION (team.assigned_to) =====
+// Band-1 assigns a team to an FLM/LSS; that person then sees it in their view.
+async function assignTeam(teamId,name){
+  const t=TEAMS.find(x=>x.id===teamId);if(!t)return;
+  const prev=t.assigned_to||null;
+  t.assigned_to=name||null; // optimistic
+  try{
+    const {error}=await sb.from('teams').update({assigned_to:name||null}).eq('id',teamId);
+    if(error)throw error;
+  }catch(e){
+    t.assigned_to=prev;
+    alert('Could not assign: '+(e.message||'assigned_to column missing? Run: alter table teams add column assigned_to text;'));
+  }
+  renderTeams();
+}
 let signupMode=false;
 
 // Set this to YOUR platform-owner email to unlock the Platform tab.
@@ -645,6 +726,7 @@ async function loadAll(){
   ]);
   TEAMS=t.data||[];MEMBERS=m.data||[];ASSESS=a.data||[];CONNS=c.data||[];ORGDIR=od.data||[];
   buildMgrMap();
+  renderViewAs();
   document.getElementById('appBody').style.display='block';
   // THE ORGANISATION PILLAR — structure-first, enforced.
   if(JUST_ONBOARDED || !orgStructureReady()){
@@ -771,15 +853,20 @@ function scoreOps(kpis,behav){
 
 /* ============ ASSESS ============ */
 function renderTeamSelect(){
-  aTeam.innerHTML='<option value="">— manual —</option>'+TEAMS.map(t=>`<option value="${t.id}">${t.name}</option>`).join('');
+  const {access}=myAccess();
+  const visIds=visibleTeamIds();
+  const list=access==='full'?TEAMS:TEAMS.filter(t=>visIds.has(t.id));
+  aTeam.innerHTML='<option value="">— manual —</option>'+list.map(t=>`<option value="${t.id}">${t.name}${t.manager?' · '+t.manager:''}</option>`).join('');
 }
 function fillTeamMembers(){
   const team=TEAMS.find(t=>t.id===aTeam.value);
-  ASSESS_MODE=(team&&team.kind==='operations')?'operations':'training';
+  ASSESS_MODE=(team&&(team.kind==='operations'||team.kind==='flm'))?'operations':'training';
   renderAssessBody();
   const vis=new Set(visibleMembers().map(m=>m.id));
   const list=MEMBERS.filter(m=>m.team_id===aTeam.value && vis.has(m.id));
-  aMember.innerHTML='<option value="">— select —</option>'+list.map(m=>`<option value="${m.id}">${m.name} · ${m.emp_id||''}</option>`).join('');
+  aMember.innerHTML='<option value="">— select —</option>'+list.map(m=>{
+    const desig=m.job_title||m.role||'';
+    return `<option value="${m.id}">${m.name} · ${m.emp_id||''}${desig?' · '+desig:''}</option>`;}).join('');
 }
 function fillMember(){
   // Switching roster member = clean slate. Re-render the assess body so all
@@ -886,15 +973,46 @@ async function saveConnection(){
 }
 /* ============ ORG DIRECTORY ============ */
 const ORGDIR_KINDS=[['department','Departments'],['cost_center','Cost Centers'],['job_title','Job Titles'],['manager','Managers']];
+// Build the leadership chain from org_directory reports_to links.
+// Renders: Cost Centre → AGM → Director → Managers → FLMs, with live counts.
+function mgrStats(name){
+  const directs=MEMBERS.filter(x=>x.manager&&x.manager.toLowerCase()===name.toLowerCase()).length;
+  const span=subtreeMemberIds(name).size;
+  const teams=TEAMS.filter(t=>t.manager&&t.manager.toLowerCase()===name.toLowerCase()).length;
+  return {directs,span,teams};
+}
+function renderOrgChain(){
+  const mgrs=(ORGDIR||[]).filter(o=>o.kind==='manager');
+  if(!mgrs.length)return '';
+  const byName={};mgrs.forEach(o=>{byName[o.name.toLowerCase()]=o;});
+  const kidsOf=(name)=>mgrs.filter(o=>(dirMeta(o).reports_to||'').toLowerCase()===(name||'').toLowerCase());
+  const roots=mgrs.filter(o=>{const r=dirMeta(o).reports_to;return !r||!byName[r.toLowerCase()];});
+  // group roots by cost centre
+  const ccs={};roots.forEach(o=>{const cc=dirMeta(o).cost_center||'—';(ccs[cc]=ccs[cc]||[]).push(o);});
+  const node=(o,depth)=>{
+    const m=dirMeta(o);const s=mgrStats(o.name);
+    const tag=m.job_title||'Manager';
+    const meta=[m.department,`${s.teams} team${s.teams===1?'':'s'}`,`${s.directs} direct${s.directs===1?'':'s'}`,`${s.span} in span`].filter(Boolean).join(' · ');
+    const kids=kidsOf(o.name).map(k=>node(k,depth+1)).join('');
+    return `<div style="margin-left:${depth*22}px;padding:7px 0;border-left:${depth?'2px solid var(--line2,#2E3850)':'none'};${depth?'padding-left:14px':''}">
+      <span style="font-weight:700">${o.name}</span>
+      <span class="tag" style="margin-left:8px">${tag}</span>
+      <div class="help" style="margin-top:2px">${meta}</div>${kids}</div>`;
+  };
+  return `<div class="panel" style="grid-column:1/-1;margin-bottom:4px"><h2>Org chart</h2>${
+    Object.entries(ccs).map(([cc,list])=>
+      `<div style="margin-bottom:10px"><div class="tag" style="letter-spacing:.08em">COST CENTRE · ${cc}</div>${
+        list.map(o=>node(o,0)).join('')}</div>`).join('')}</div>`;
+}
 function renderOrgDir(){
   const grid=document.getElementById('orgGrid');
-  grid.innerHTML=ORGDIR_KINDS.map(([kind,label])=>{
+  grid.innerHTML=renderOrgChain()+ORGDIR_KINDS.map(([kind,label])=>{
     const items=ORGDIR.filter(o=>o.kind===kind);
     const isMgr=kind==='manager';
     return `<div class="panel">
       <h2>${label}</h2>
       <div id="dir_${kind}">${items.length?items.map(o=>{
-        const m=o.meta||{};
+        const m=dirMeta(o);
         let sub='';
         if(isMgr){
           const directs=MEMBERS.filter(x=>x.manager&&x.manager.toLowerCase()===o.name.toLowerCase()).length;
@@ -1323,13 +1441,25 @@ function renderTeams(){
   const visTeams=access==='full'?TEAMS:TEAMS.filter(t=>visibleTeamIds().has(t.id));
   if(!visTeams.length){el.innerHTML='<div class="empty">No teams in your view.</div>';return;}
   const vis=new Set(visibleMembers().map(m=>m.id));
+  // Delegation targets: every org-chart person (FLMs, LSS, managers).
+  const dirPeople=(ORGDIR||[]).filter(o=>o.kind==='manager').map(o=>o.name).sort();
   el.innerHTML=visTeams.map(t=>{const mem=MEMBERS.filter(m=>m.team_id===t.id && (access==='full'||vis.has(m.id)));
     const assessed=ASSESS.filter(a=>a.team_id===t.id).length;
+    const isOps=t.kind==='operations'||t.kind==='flm';
+    const own=[t.manager?('Manager: '+t.manager):null,t.assigned_to?('Delegated to: '+t.assigned_to):null].filter(Boolean).join(' · ');
+    const assign=access==='full'
+      ?`<div onclick="event.stopPropagation()" style="margin-top:8px">
+          <select onchange="assignTeam('${t.id}',this.value)" style="width:auto;padding:5px 9px;font-size:11px;font-family:var(--mono)">
+            <option value="">— delegate to… —</option>
+            ${dirPeople.map(n=>`<option value="${n}" ${t.assigned_to===n?'selected':''}>${n}</option>`).join('')}
+          </select>${t.assigned_to?`<button class="btn alt sm" style="padding:4px 9px;margin-left:6px" onclick="assignTeam('${t.id}','')">clear</button>`:''}</div>`
+      :'';
     return `<div class="panel" style="cursor:pointer" onclick="openTeam('${t.id}')">
       <div style="display:flex;justify-content:space-between;align-items:center">
         <div><div style="font-family:var(--disp);font-weight:700;font-size:17px">${t.name}
-          <span class="tag" style="margin-left:8px;color:${t.kind==='operations'?'var(--accent)':'var(--muted)'}">${t.kind==='operations'?'OPERATIONS':'TRAINING'}</span></div>
-          <div class="help" style="margin-top:2px">${mem.length} members · ${assessed} assessed · ${t.source}</div></div>
+          <span class="tag" style="margin-left:8px;color:${isOps?'var(--accent)':'var(--muted)'}">${isOps?'OPERATIONS':'TRAINING'}</span>
+          ${t.assigned_to?'<span class="tag" style="margin-left:6px;color:var(--amber)">DELEGATED</span>':''}</div>
+          <div class="help" style="margin-top:2px">${mem.length} members · ${assessed} assessed · ${t.source}${own?' · '+own:''}</div>${assign}</div>
         <span class="tag">open →</span></div></div>`;}).join('');
 }
 function openTeam(id){
@@ -1379,24 +1509,30 @@ function buildPurview(){
 }
 function setPurview(p){PURVIEW=p;PURVIEW_VAL=null;buildPurview();renderDash();}
 // returns the set of team_ids in scope, plus a label
+// Everything is pre-filtered through the band engine (visibleTeamIds/visibleMembers)
+// so Band-2/3 users — and View-as previews — only ever see their slice.
 function purviewScope(){
-  if(PURVIEW==='org')return{teamIds:TEAMS.map(t=>t.id),label:'Across all teams'};
+  const {access}=myAccess();
+  const bandTeams=access==='full'?TEAMS:TEAMS.filter(t=>visibleTeamIds().has(t.id));
+  const bandMembers=visibleMembers();
+  if(PURVIEW==='org')return{teamIds:bandTeams.map(t=>t.id),label:access==='full'?'Across all teams':'Across your teams'};
   if(PURVIEW==='team'){
-    const tid=PURVIEW_VAL||TEAMS[0]?.id;
-    return{teamIds:tid?[tid]:[],label:'Team: '+(TEAMS.find(t=>t.id===tid)?.name||'—'),pick:'team'};
+    const tid=PURVIEW_VAL||bandTeams[0]?.id;
+    return{teamIds:tid?[tid]:[],label:'Team: '+(bandTeams.find(t=>t.id===tid)?.name||'—'),pick:'team',bandTeams};
   }
   if(PURVIEW==='manager'){
-    const mgr=PURVIEW_VAL||[...new Set(MEMBERS.map(m=>m.manager).filter(Boolean))][0];
-    // teams that contain at least one member under this manager
-    const memberNames=MEMBERS.filter(m=>m.manager===mgr).map(m=>m.name);
-    const teamIds=[...new Set(MEMBERS.filter(m=>m.manager===mgr).map(m=>m.team_id))];
-    return{teamIds,label:'Manager: '+(mgr||'—'),pick:'manager',mgr,memberNames};
+    const mgrsAll=[...new Set(bandMembers.map(m=>m.manager).filter(Boolean))];
+    const mgr=PURVIEW_VAL||mgrsAll[0];
+    const memberNames=bandMembers.filter(m=>m.manager===mgr).map(m=>m.name);
+    const teamIds=[...new Set(bandMembers.filter(m=>m.manager===mgr).map(m=>m.team_id))];
+    return{teamIds,label:'Manager: '+(mgr||'—'),pick:'manager',mgr,memberNames,mgrsAll};
   }
   if(PURVIEW==='dept'){
-    const dept=PURVIEW_VAL||[...new Set(MEMBERS.map(m=>m.department).filter(Boolean))][0];
-    const memberNames=MEMBERS.filter(m=>m.department===dept).map(m=>m.name);
-    const teamIds=[...new Set(MEMBERS.filter(m=>m.department===dept).map(m=>m.team_id))];
-    return{teamIds,label:'Department: '+(dept||'—'),pick:'dept',dept,memberNames};
+    const deptsAll=[...new Set(bandMembers.map(m=>m.department).filter(Boolean))];
+    const dept=PURVIEW_VAL||deptsAll[0];
+    const memberNames=bandMembers.filter(m=>m.department===dept).map(m=>m.name);
+    const teamIds=[...new Set(bandMembers.filter(m=>m.department===dept).map(m=>m.team_id))];
+    return{teamIds,label:'Department: '+(dept||'—'),pick:'dept',dept,memberNames,deptsAll};
   }
 }
 function renderDash(){
@@ -1406,18 +1542,19 @@ function renderDash(){
   // optional second-row selector for team/manager
   const selWrap=document.getElementById('purviewBar');
   if(scope.pick==='team'){
-    const tid=PURVIEW_VAL||TEAMS[0]?.id;
+    const pool=scope.bandTeams||TEAMS;
+    const tid=PURVIEW_VAL||pool[0]?.id;
     selWrap.insertAdjacentHTML('beforeend',
       `<select style="width:auto;margin-left:10px;display:inline-block;padding:7px 10px" onchange="PURVIEW_VAL=this.value;renderDash()">`+
-      TEAMS.map(t=>`<option value="${t.id}" ${t.id===tid?'selected':''}>${t.name}</option>`).join('')+`</select>`);
+      pool.map(t=>`<option value="${t.id}" ${t.id===tid?'selected':''}>${t.name}</option>`).join('')+`</select>`);
   }else if(scope.pick==='manager'){
-    const mgrs=[...new Set(MEMBERS.map(m=>m.manager).filter(Boolean))];
+    const mgrs=scope.mgrsAll||[];
     const cur=PURVIEW_VAL||mgrs[0];
     selWrap.insertAdjacentHTML('beforeend',
       `<select style="width:auto;margin-left:10px;display:inline-block;padding:7px 10px" onchange="PURVIEW_VAL=this.value;renderDash()">`+
       (mgrs.length?mgrs.map(m=>`<option value="${m}" ${m===cur?'selected':''}>${m}</option>`).join(''):'<option>— no managers —</option>')+`</select>`);
   }else if(scope.pick==='dept'){
-    const depts=[...new Set(MEMBERS.map(m=>m.department).filter(Boolean))];
+    const depts=scope.deptsAll||[];
     const cur=PURVIEW_VAL||depts[0];
     selWrap.insertAdjacentHTML('beforeend',
       `<select style="width:auto;margin-left:10px;display:inline-block;padding:7px 10px" onchange="PURVIEW_VAL=this.value;renderDash()">`+
