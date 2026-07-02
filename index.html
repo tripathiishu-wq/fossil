@@ -591,6 +591,22 @@ function renderViewAs(){
   w.innerHTML=`<select onchange="setViewAs(this.value)" style="width:auto;padding:6px 10px;font-family:var(--mono);font-size:11px;${VIEW_AS?'border-color:var(--amber);color:var(--amber)':''}">
     <option value="">👁 View as: Assignee (me)</option>${opts}</select>`;
 }
+// ===== BAND-AWARE NAV =====
+// FLMs live in a "MY TEAM" world: Dashboard · My Team · Assess · Reports.
+// Org structure and Connections are leadership surfaces — hidden below full access.
+function isFlmView(){
+  const {access,me}=myAccess();
+  return access!=='full'&&me&&/flm|front line/i.test(me.job_title||'');
+}
+function applyNav(){
+  const {access}=myAccess();
+  const flm=isFlmView();
+  const btn=(v)=>document.querySelector(`.nav button[data-v="${v}"]`);
+  const orgB=btn('org'),connB=btn('connect'),teamsB=btn('teams');
+  if(orgB)orgB.style.display=(access==='full')?'':'none';
+  if(connB)connB.style.display=(access==='full')?'':'none';
+  if(teamsB)teamsB.textContent=flm?'My Team':'Teams';
+}
 function setViewAs(name){
   if(!name){VIEW_AS=null;}
   else{
@@ -598,9 +614,12 @@ function setViewAs(name){
     if(o){const m=dirMeta(o);VIEW_AS={name:o.name,job_title:m.job_title||'Manager'};}
   }
   renderViewAs();
-  // Re-render whatever view is on screen through the new lens.
+  applyNav();
+  // If the previewed band can't see the current tab, land on Dashboard.
   const cur=document.querySelector('.nav button.on');
-  show(cur?cur.dataset.v:'dash');
+  const v=cur?cur.dataset.v:'dash';
+  const {access}=myAccess();
+  show((access!=='full'&&(v==='org'||v==='connect'||v==='platform'||v==='settings'))?'dash':v);
 }
 
 // ===== DELEGATION (team.assigned_to) =====
@@ -727,6 +746,7 @@ async function loadAll(){
   TEAMS=t.data||[];MEMBERS=m.data||[];ASSESS=a.data||[];CONNS=c.data||[];ORGDIR=od.data||[];
   buildMgrMap();
   renderViewAs();
+  applyNav();
   document.getElementById('appBody').style.display='block';
   // THE ORGANISATION PILLAR — structure-first, enforced.
   if(JUST_ONBOARDED || !orgStructureReady()){
@@ -763,6 +783,11 @@ function show(v){
     if(m){m.style.display='block';setTimeout(()=>{m.style.display='none';},4000);}
     return;
   }
+  // BAND GATE: leadership-only surfaces are unreachable below full access
+  // (covers real Band-2/3 logins AND View-as previews).
+  {const {access}=myAccess();
+   if(access!=='full'&&(v==='org'||v==='connect'||v==='platform'||v==='settings')){v='dash';}}
+  applyNav();
   document.querySelectorAll('.nav button').forEach(b=>b.classList.toggle('on',b.dataset.v===v));
   document.querySelectorAll('.view').forEach(x=>x.classList.remove('on'));
   document.getElementById('v-'+v).classList.add('on');
@@ -855,7 +880,7 @@ function scoreOps(kpis,behav){
 function renderTeamSelect(){
   const {access}=myAccess();
   const visIds=visibleTeamIds();
-  const list=access==='full'?TEAMS:TEAMS.filter(t=>visIds.has(t.id));
+  const list=realTeams(access==='full'?TEAMS:TEAMS.filter(t=>visIds.has(t.id)));
   aTeam.innerHTML='<option value="">— manual —</option>'+list.map(t=>`<option value="${t.id}">${t.name}${t.manager?' · '+t.manager:''}</option>`).join('');
 }
 function fillTeamMembers(){
@@ -1010,9 +1035,52 @@ function renderOrgChain(){
       `<div style="margin-bottom:10px"><div class="tag" style="letter-spacing:.08em">COST CENTRE · ${cc}</div>${
         list.map(o=>node(o,0)).join('')}</div>`).join('')}</div>`;
 }
+// ===== TEAM LEADERS & TRAINERS (Org sub-tab) =====
+// TEAM LEADERS = FLMs, grouped under their HOD. TRAINERS = LSS / training titles.
+let TLT_TAB='leaders'; // 'leaders' | 'trainers'
+function setTltTab(t){TLT_TAB=t;renderOrgDir();}
+function isTrainerTitle(t){return /lss|trainer|learning service|learning specialist/i.test(t||'');}
+function renderTeamLeadersTrainers(){
+  const mgrs=(ORGDIR||[]).filter(o=>o.kind==='manager');
+  const flms=mgrs.filter(o=>/flm|front line/i.test(dirMeta(o).job_title||''));
+  const trainers=mgrs.filter(o=>isTrainerTitle(dirMeta(o).job_title));
+  const tabBtn=(id,label)=>`<button class="btn ${TLT_TAB===id?'':'alt '}sm" style="padding:6px 14px" onclick="setTltTab('${id}')">${label}</button>`;
+  let body='';
+  if(TLT_TAB==='leaders'){
+    if(!flms.length){body='<p class="help">No FLMs yet — add managers with title FLM.</p>';}
+    else{
+      // group by HOD (reports_to)
+      const byHod={};flms.forEach(o=>{const h=dirMeta(o).reports_to||'—';(byHod[h]=byHod[h]||[]).push(o);});
+      body=Object.keys(byHod).sort().map(hod=>{
+        const hodDept=(()=>{const h=mgrs.find(x=>x.name===hod);return h?dirMeta(h).department:null;})();
+        return `<div style="margin-bottom:12px">
+          <div class="tag" style="letter-spacing:.06em">HOD · ${hod}${hodDept?' · '+hodDept:''}</div>
+          ${byHod[hod].map(o=>{
+            const s=mgrStats(o.name);
+            const myTeams=TEAMS.filter(t=>t.manager&&t.manager.toLowerCase()===o.name.toLowerCase());
+            return `<div class="metric" style="align-items:flex-start"><span><b>${o.name}</b>
+              <div class="help" style="margin-top:2px">${s.directs} SSAs · ${myTeams.map(t=>t.name).join(', ')||'no team'}</div></span>
+              <span class="tag">FLM</span></div>`;}).join('')}</div>`;
+      }).join('');
+    }
+  }else{
+    body=trainers.length?trainers.map(o=>{
+      const s=mgrStats(o.name);
+      const myTeams=TEAMS.filter(t=>t.manager&&t.manager.toLowerCase()===o.name.toLowerCase());
+      return `<div class="metric" style="align-items:flex-start"><span><b>${o.name}</b>
+        <div class="help" style="margin-top:2px">${s.directs} trainees · ${myTeams.map(t=>t.name).join(', ')||'no cluster yet'}</div></span>
+        <span class="tag" style="color:var(--amber)">TRAINER · LSS</span></div>`;}).join('')
+      :'<p class="help">No trainers yet. Add a manager with title "Learning Service Specialist" — the training cluster lives outside operations.</p>';
+  }
+  return `<div class="panel" style="grid-column:1/-1;margin-bottom:4px">
+    <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px">
+      <h2 style="margin:0">Team Leaders &amp; Trainers</h2>
+      <div class="btnrow">${tabBtn('leaders','Team Leaders')}${tabBtn('trainers','Trainers')}</div></div>
+    <div style="margin-top:12px">${body}</div></div>`;
+}
 function renderOrgDir(){
   const grid=document.getElementById('orgGrid');
-  grid.innerHTML=renderOrgChain()+ORGDIR_KINDS.map(([kind,label])=>{
+  grid.innerHTML=renderOrgChain()+renderTeamLeadersTrainers()+ORGDIR_KINDS.map(([kind,label])=>{
     const items=ORGDIR.filter(o=>o.kind===kind);
     const isMgr=kind==='manager';
     return `<div class="panel">
@@ -1441,18 +1509,34 @@ async function createTeam(){
   }
   btn.disabled=false;btn.textContent=_t;closeCreate();show('teams');
 }
+let TEAMS_DEPT_FILTER='';
+function setTeamsDeptFilter(d){TEAMS_DEPT_FILTER=d;renderTeams();}
+function teamDept(t){
+  // A team's department = its leader's department (org chart first, MGR_MAP fallback).
+  if(!t.manager)return null;
+  const o=(ORGDIR||[]).find(x=>x.kind==='manager'&&x.name.toLowerCase()===t.manager.toLowerCase());
+  if(o)return dirMeta(o).department;
+  return (MGR_MAP[t.manager]||{}).department||null;
+}
 function renderTeams(){
   const el=document.getElementById('teamList');
   const {access}=myAccess();
-  const visTeams=access==='full'?TEAMS:TEAMS.filter(t=>visibleTeamIds().has(t.id));
-  if(!visTeams.length){el.innerHTML='<div class="empty">No teams in your view.</div>';return;}
+  let visTeams=access==='full'?TEAMS:TEAMS.filter(t=>visibleTeamIds().has(t.id));
+  visTeams=realTeams(visTeams);
+  // Department filter chips (built from org directory).
+  const deptList=(ORGDIR||[]).filter(o=>o.kind==='department').map(o=>o.name).sort();
+  const chips=`<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px">
+    <button class="btn ${TEAMS_DEPT_FILTER===''?'':'alt '}sm" style="padding:5px 13px" onclick="setTeamsDeptFilter('')">All</button>
+    ${deptList.map(d=>`<button class="btn ${TEAMS_DEPT_FILTER===d?'':'alt '}sm" style="padding:5px 13px" onclick="setTeamsDeptFilter('${d.replace(/'/g,"\\'")}')">${d}</button>`).join('')}</div>`;
+  if(TEAMS_DEPT_FILTER)visTeams=visTeams.filter(t=>(teamDept(t)||'').toLowerCase()===TEAMS_DEPT_FILTER.toLowerCase());
+  if(!visTeams.length){el.innerHTML=chips+'<div class="empty">No teams in this view.</div>';return;}
   const vis=new Set(visibleMembers().map(m=>m.id));
-  // Delegation targets: every org-chart person (FLMs, LSS, managers).
   const dirPeople=(ORGDIR||[]).filter(o=>o.kind==='manager').map(o=>o.name).sort();
-  el.innerHTML=visTeams.map(t=>{const mem=MEMBERS.filter(m=>m.team_id===t.id && (access==='full'||vis.has(m.id)));
+  const trainerNames=new Set((ORGDIR||[]).filter(o=>o.kind==='manager'&&isTrainerTitle(dirMeta(o).job_title)).map(o=>o.name.toLowerCase()));
+  const card=(t)=>{const mem=MEMBERS.filter(m=>m.team_id===t.id && (access==='full'||vis.has(m.id)));
     const assessed=ASSESS.filter(a=>a.team_id===t.id).length;
     const isOps=t.kind==='operations'||t.kind==='flm';
-    const own=[t.manager?('Manager: '+t.manager):null,t.assigned_to?('Delegated to: '+t.assigned_to):null].filter(Boolean).join(' · ');
+    const own=[t.manager?('Team Leader: '+t.manager):null,t.assigned_to?('Delegated to: '+t.assigned_to):null].filter(Boolean).join(' · ');
     const assign=access==='full'
       ?`<div onclick="event.stopPropagation()" style="margin-top:8px">
           <select onchange="assignTeam('${t.id}',this.value)" style="width:auto;padding:5px 9px;font-size:11px;font-family:var(--mono)">
@@ -1466,7 +1550,17 @@ function renderTeams(){
           <span class="tag" style="margin-left:8px;color:${isOps?'var(--accent)':'var(--muted)'}">${isOps?'OPERATIONS':'TRAINING'}</span>
           ${t.assigned_to?'<span class="tag" style="margin-left:6px;color:var(--amber)">DELEGATED</span>':''}</div>
           <div class="help" style="margin-top:2px">${mem.length} members · ${assessed} assessed · ${t.source}${own?' · '+own:''}</div>${assign}</div>
-        <span class="tag">open →</span></div></div>`;}).join('');
+        <span class="tag">open →</span></div></div>`;};
+  // OPERATIONS = Team Leaders' (FLM) teams. TRAINING = LSS/trainer clusters + kind training.
+  const isTraining=(t)=>t.kind==='training'||(t.manager&&trainerNames.has(t.manager.toLowerCase()));
+  const opsTeams=visTeams.filter(t=>!isTraining(t));
+  const trTeams=visTeams.filter(isTraining);
+  const section=(label,list,color)=>list.length
+    ?`<div class="tag" style="letter-spacing:.08em;margin:${label.startsWith('TRAINING')?'18px':'0'} 0 10px;display:block;color:${color}">${label}</div>`+list.map(card).join('')
+    :'';
+  el.innerHTML=chips+(section('OPERATIONS · TEAM LEADERS',opsTeams,'var(--accent)')
+    +section('TRAINING CLUSTER · TRAINERS / LSS',trTeams,'var(--amber)')
+    ||'<div class="empty">No teams in this view.</div>');
 }
 function openTeam(id){
   const t=TEAMS.find(x=>x.id===id),mem=MEMBERS.filter(m=>m.team_id===id);
@@ -1510,16 +1604,23 @@ function buildPurview(){
   bar.innerHTML=`
     <button data-p="org" class="${PURVIEW==='org'?'on':''}" onclick="setPurview('org')">Org-wide</button>
     <button data-p="team" class="${PURVIEW==='team'?'on':''}" onclick="setPurview('team')">By team</button>
-    <button data-p="manager" class="${PURVIEW==='manager'?'on':''}" onclick="setPurview('manager')">By manager</button>
     <button data-p="dept" class="${PURVIEW==='dept'?'on':''}" onclick="setPurview('dept')">By department</button>`;
 }
 function setPurview(p){PURVIEW=p;PURVIEW_VAL=null;buildPurview();renderDash();}
 // returns the set of team_ids in scope, plus a label
 // Everything is pre-filtered through the band engine (visibleTeamIds/visibleMembers)
 // so Band-2/3 users — and View-as previews — only ever see their slice.
+// Departments are not teams: strip '<Dept> Team' / bare-dept rows everywhere.
+function realTeams(list){
+  const depts=new Set((ORGDIR||[]).filter(o=>o.kind==='department').map(o=>o.name.toLowerCase()));
+  return (list||TEAMS).filter(t=>{
+    const n=(t.name||'').toLowerCase();
+    return !depts.has(n)&&!depts.has(n.replace(/\s+team$/,''));
+  });
+}
 function purviewScope(){
   const {access}=myAccess();
-  const bandTeams=access==='full'?TEAMS:TEAMS.filter(t=>visibleTeamIds().has(t.id));
+  const bandTeams=realTeams(access==='full'?TEAMS:TEAMS.filter(t=>visibleTeamIds().has(t.id)));
   const bandMembers=visibleMembers();
   if(PURVIEW==='org')return{teamIds:bandTeams.map(t=>t.id),label:access==='full'?'Across all teams':'Across your teams'};
   if(PURVIEW==='team'){
@@ -1620,7 +1721,7 @@ function renderDash(){
   }else{
     segEl.innerHTML=seg.map(([n,c])=>n?`<div style="background:${c};width:${n/sum*100}%">${n/sum>=0.08?n:''}</div>`:'').join('');
   }
-  const teamsToShow=TEAMS.filter(t=>scope.teamIds.includes(t.id));
+  const teamsToShow=realTeams(TEAMS.filter(t=>scope.teamIds.includes(t.id)));
   document.getElementById('dashTeams').innerHTML=teamsToShow.length?teamsToShow.map(t=>{const la=ASSESS.filter(a=>a.team_id===t.id&&a.result&&a.result.band);
     const av=la.length?Math.round(la.reduce((s,a)=>s+a.result.composite,0)/la.length):0;
     return `<div class="metric"><span>${t.name}</span><span>${la.length}/${MEMBERS.filter(m=>m.team_id===t.id).length} assessed · avg ${av||'—'}</span></div>`;}).join('')
