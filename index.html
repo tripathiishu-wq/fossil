@@ -895,7 +895,18 @@ function renderOrgDir(){
       <h2>${label}</h2>
       <div id="dir_${kind}">${items.length?items.map(o=>{
         const m=o.meta||{};
-        const sub=isMgr&&(m.department||m.job_title)?`<div class="help" style="margin-top:2px">${[m.department,m.job_title].filter(Boolean).join(' · ')}</div>`:'';
+        let sub='';
+        if(isMgr){
+          const directs=MEMBERS.filter(x=>x.manager&&x.manager.toLowerCase()===o.name.toLowerCase()).length;
+          const spanIds=subtreeMemberIds(o.name);const total=spanIds.size;
+          const teamCount=TEAMS.filter(t=>t.manager&&t.manager.toLowerCase()===o.name.toLowerCase()).length;
+          const meta=[m.department,m.job_title].filter(Boolean).join(' · ');
+          const stat=`${directs} direct${directs===1?'':'s'} · ${total} in span · ${teamCount} team${teamCount===1?'':'s'}`;
+          sub=`<div class="help" style="margin-top:2px">${meta?meta+' — ':''}${stat}</div>`;
+        } else if(kind==='department'){
+          const n=MEMBERS.filter(x=>(x.department||'').toLowerCase()===o.name.toLowerCase()).length;
+          if(n)sub=`<div class="help" style="margin-top:2px">${n} ${n===1?'person':'people'}</div>`;
+        }
         return `<div class="metric" style="align-items:flex-start"><span>${o.name}${sub}</span><span><button class="btn alt sm" style="padding:3px 9px" onclick="removeOrgDirItem('${o.id}')">remove</button></span></div>`;}).join(''):
         '<p class="help" style="margin:0">None yet.</p>'}</div>
       <div class="row" style="margin-top:10px">
