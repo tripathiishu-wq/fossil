@@ -949,7 +949,11 @@ function renderTeamSelect(){
   const {access}=myAccess();
   const visIds=visibleTeamIds();
   const list=realTeams(access==='full'?TEAMS:TEAMS.filter(t=>visIds.has(t.id)));
-  aTeam.innerHTML='<option value="">— manual —</option>'+list.map(t=>`<option value="${t.id}">${t.name}${t.manager?' · '+t.manager:''}</option>`).join('');
+  // ORG > DEPT > TEAMS in the picker too.
+  const byDept={};list.forEach(t=>{const d=teamDept(t)||'Other';(byDept[d]=byDept[d]||[]).push(t);});
+  aTeam.innerHTML='<option value="">\u2014 manual \u2014</option>'+
+    Object.keys(byDept).sort().map(d=>`<optgroup label="${d}">`+
+      byDept[d].map(t=>`<option value="${t.id}">${t.name}${t.manager?' \u00b7 '+t.manager:''}</option>`).join('')+`</optgroup>`).join('');
 }
 function fillTeamMembers(){
   const team=TEAMS.find(t=>t.id===aTeam.value);
@@ -1742,12 +1746,24 @@ function renderTeams(){
   const isTraining=(t)=>t.kind==='training'||(t.manager&&trainerNames.has(t.manager.toLowerCase()));
   const opsTeams=visTeams.filter(t=>!isTraining(t));
   const trTeams=visTeams.filter(isTraining);
-  const section=(label,list,color)=>list.length
-    ?`<div class="tag" style="letter-spacing:.08em;margin:${label.startsWith('TRAINING')?'18px':'0'} 0 10px;display:block;color:${color}">${label}</div>`+list.map(card).join('')
-    :'';
-  el.innerHTML=chips+(section('OPERATIONS · TEAM LEADERS',opsTeams,'var(--accent)')
-    +section('TRAINING CLUSTER · TRAINERS / LSS',trTeams,'var(--amber)')
-    ||'<div class="empty">No teams in this view.</div>');
+  const header=(label,color,first)=>`<div class="tag" style="letter-spacing:.08em;margin:${first?'0':'18px'} 0 10px;display:block;color:${color}">${label}</div>`;
+  let html='';
+  if(!TEAMS_DEPT_FILTER){
+    // ORG > DEPT > TEAMS: group operations teams under department headers.
+    const byDept={};opsTeams.forEach(t=>{const d=teamDept(t)||'Unassigned';(byDept[d]=byDept[d]||[]).push(t);});
+    const dks=Object.keys(byDept).sort((a,b)=>a==='Unassigned'?1:b==='Unassigned'?-1:a.localeCompare(b));
+    let first=true;
+    dks.forEach(d=>{
+      const hod=(ORGDIR||[]).find(o=>o.kind==='manager'&&(dirMeta(o).job_title||'').toLowerCase()==='manager'&&(dirMeta(o).department||'').toLowerCase()===d.toLowerCase());
+      html+=header('OPERATIONS \u00b7 '+d+(hod?' \u00b7 HOD: '+hod.name:''),'var(--accent)',first);
+      html+=byDept[d].map(card).join('');
+      first=false;
+    });
+  }else{
+    html+=header('OPERATIONS \u00b7 TEAM LEADERS','var(--accent)',true)+opsTeams.map(card).join('');
+  }
+  if(trTeams.length)html+=header('TRAINING CLUSTER \u00b7 TRAINERS / LSS','var(--amber)',false)+trTeams.map(card).join('');
+  el.innerHTML=chips+(html||'<div class="empty">No teams in this view.</div>');
 }
 function openTeam(id){
   const t=TEAMS.find(x=>x.id===id),mem=MEMBERS.filter(m=>m.team_id===id);
@@ -1913,11 +1929,12 @@ function renderDrillCards(scope){
       <span>${a?('<b>'+a.result.composite+'</b> \u00b7 '+band):'<span class="help">not assessed</span>'}</span></div>`;
   }).join(''):'<div class="empty">No members on this team yet.</div>';
 }
-/* ===== ANALYTICS: PIE + COMPLETION (BI layer) ===== */
-let PIE_MODE='org', PIE_VAL='', COMP_MODE='team';
-function setPieMode(m){PIE_MODE=m;PIE_VAL='';renderAnalytics();}
-function setPieVal(v){PIE_VAL=v;renderAnalytics();}
-function setCompMode(m){COMP_MODE=m;renderAnalytics();}
+/* ===== ANALYTICS: PIE + COMPLETION — Org > Dept > Teams everywhere ===== */
+let PIE={dept:'',teamId:''};
+let COMP={dept:''};
+function pieDept(d){PIE={dept:d,teamId:''};renderAnalytics();}
+function pieTeam(t){PIE.teamId=t;renderAnalytics();}
+function compDept(d){COMP={dept:d};renderAnalytics();}
 function analyticsBase(){
   const mem=visibleMembers().filter(m=>realTeams(TEAMS).some(t=>t.id===m.team_id));
   const latest=latestPerPerson();
@@ -1957,53 +1974,58 @@ function pieSvg(mix){
       <text x="90" y="104" text-anchor="middle" fill="var(--muted,#8a93ad)" font-size="10" font-family="inherit">MEMBERS</text></svg>
     <div style="flex:1;min-width:200px">${legend}</div></div>`;
 }
-function completionBar(label,done,total,extra){
+function completionBar(label,done,total,extra,click){
   const pct=total?Math.round(done/total*100):0;
-  return `<div style="margin-bottom:10px"><div class="metric" style="padding:0 0 4px"><span>${label}${extra?` <span class="help">${extra}</span>`:''}</span><b>${pct}% \u00b7 ${done}/${total}</b></div>
+  return `<div style="margin-bottom:10px${click?';cursor:pointer':''}" ${click?`onclick="${click}"`:''}>
+    <div class="metric" style="padding:0 0 4px"><span>${label}${extra?` <span class="help">${extra}</span>`:''}${click?' <span class="help">\u2192</span>':''}</span><b>${pct}% \u00b7 ${done}/${total}</b></div>
     <div style="height:8px;border-radius:6px;background:var(--line,#242b40);overflow:hidden">
       <div style="height:100%;width:${pct}%;border-radius:6px;background:${pct>=80?'var(--green)':pct>=40?'var(--amber)':'var(--accent)'}"></div></div></div>`;
 }
 function renderAnalytics(){
   const host=document.getElementById('dashAnalytics');if(!host)return;
   const {mem,byKey}=analyticsBase();
-  const teams=realTeams(TEAMS).filter(t=>visibleTeamIds().has(t.id)||myAccess().access==='full');
-  const flms=(ORGDIR||[]).filter(o=>o.kind==='manager'&&/flm|front line/i.test(dirMeta(o).job_title||''));
   const depts=[...new Set(mem.map(m=>m.department).filter(Boolean))].sort();
-  let slice=mem, sub='';
-  if(PIE_MODE==='team'){
-    const tid=PIE_VAL||teams[0]?.id;
-    slice=mem.filter(m=>m.team_id===tid);
-    sub=`<select onchange="setPieVal(this.value)" style="width:auto;padding:6px 10px;margin-left:10px">${teams.map(t=>`<option value="${t.id}" ${t.id===tid?'selected':''}>${t.name}</option>`).join('')}</select>`;
-  }else if(PIE_MODE==='manager'){
-    const names=flms.map(o=>o.name);
-    const who=PIE_VAL||names[0]||'';
-    const ids=subtreeMemberIds(who);
-    slice=mem.filter(m=>ids.has(m.id)||(m.manager&&m.manager.toLowerCase()===who.toLowerCase()));
-    sub=`<select onchange="setPieVal(this.value)" style="width:auto;padding:6px 10px;margin-left:10px">${names.map(n=>`<option value="${n}" ${n===who?'selected':''}>${n} \u00b7 FLM</option>`).join('')}</select>`;
-  }else if(PIE_MODE==='dept'){
-    const dd=PIE_VAL||depts[0]||'';
-    slice=mem.filter(m=>(m.department||'')===dd);
-    sub=`<select onchange="setPieVal(this.value)" style="width:auto;padding:6px 10px;margin-left:10px">${depts.map(x=>`<option value="${x}" ${x===dd?'selected':''}>${x}</option>`).join('')}</select>`;
-  }
-  const pbtn=(id,l)=>`<button data-p="${id}" class="${PIE_MODE===id?'on':''}" onclick="setPieMode('${id}')">${l}</button>`;
+  const teamsIn=(d)=>realTeams(TEAMS).filter(t=>(teamDept(t)||'').toLowerCase()===d.toLowerCase());
   const doneOf=(list)=>list.filter(m=>byKey[m.team_id+'|'+m.name]).length;
-  let compRows='';
-  if(COMP_MODE==='team'){
-    compRows=teams.map(t=>{const l=mem.filter(m=>m.team_id===t.id);return l.length?completionBar(t.name,doneOf(l),l.length,t.manager?'\u00b7 '+t.manager:''):'';}).join('');
-  }else if(COMP_MODE==='manager'){
-    compRows=flms.map(o=>{const ids=subtreeMemberIds(o.name);const l=mem.filter(m=>ids.has(m.id)||(m.manager&&m.manager.toLowerCase()===o.name.toLowerCase()));return l.length?completionBar(o.name,doneOf(l),l.length,'\u00b7 '+(dirMeta(o).department||'')):'';}).join('');
-  }else if(COMP_MODE==='dept'){
-    compRows=depts.map(dd=>{const l=mem.filter(m=>(m.department||'')===dd);return completionBar(dd,doneOf(l),l.length);}).join('');
+  // ---- PIE: Org > Dept > Team cascade ----
+  let slice=mem;
+  const deptSel=`<select onchange="pieDept(this.value)" style="width:auto;padding:6px 10px">
+    <option value="">Organisation \u2014 all departments</option>
+    ${depts.map(d=>`<option value="${d}" ${PIE.dept===d?'selected':''}>${d}</option>`).join('')}</select>`;
+  let teamSel='';
+  if(PIE.dept){
+    slice=mem.filter(m=>(m.department||'')===PIE.dept);
+    const ts=teamsIn(PIE.dept);
+    teamSel=`<span style="opacity:.4;padding:0 6px">\u203a</span><select onchange="pieTeam(this.value)" style="width:auto;padding:6px 10px">
+      <option value="">All teams \u00b7 ${PIE.dept}</option>
+      ${ts.map(t=>`<option value="${t.id}" ${PIE.teamId===t.id?'selected':''}>${t.name}${t.manager?' \u00b7 '+t.manager:''}</option>`).join('')}</select>`;
+    if(PIE.teamId)slice=slice.filter(m=>m.team_id===PIE.teamId);
   }
-  const cbtn=(id,l)=>`<button data-p="${id}" class="${COMP_MODE===id?'on':''}" onclick="setCompMode('${id}')">${l}</button>`;
+  // ---- COMPLETION: Org bar, then dept bars; click a dept -> its team bars ----
+  let compBody='';
+  if(!COMP.dept){
+    compBody=depts.map(d=>{
+      const l=mem.filter(m=>(m.department||'')===d);
+      return completionBar(d,doneOf(l),l.length,'\u00b7 '+teamsIn(d).length+' teams',`compDept('${d.replace(/'/g,"\\'")}')`);
+    }).join('')||'<p class="help">Nothing to roll up yet.</p>';
+  }else{
+    const back=`<button class="btn alt sm" style="padding:5px 12px;margin-bottom:12px" onclick="compDept('')">\u2190 All departments</button>`;
+    const l=mem.filter(m=>(m.department||'')===COMP.dept);
+    compBody=back+completionBar(COMP.dept+' \u2014 department',doneOf(l),l.length)
+      +'<div style="height:8px"></div>'
+      +teamsIn(COMP.dept).map(t=>{
+        const tl=mem.filter(m=>m.team_id===t.id);
+        return tl.length?completionBar(t.name,doneOf(tl),tl.length,t.manager?'\u00b7 '+t.manager:''):'';
+      }).join('');
+  }
   host.innerHTML=`
   <div class="panel"><h2>Proficiency breakdown</h2>
-    <div class="purview" style="margin:10px 0 14px">${pbtn('org','Org-wide')}${pbtn('team','Team')}${pbtn('manager','Team Leader')}${pbtn('dept','Department')}${sub}</div>
+    <div style="display:flex;align-items:center;flex-wrap:wrap;margin:10px 0 14px">${deptSel}${teamSel}</div>
     ${pieSvg(mixOf(slice,byKey))}</div>
   <div class="panel"><h2>Assessment completion</h2>
     ${completionBar('Organisation-wide',doneOf(mem),mem.length)}
-    <div class="purview" style="margin:14px 0">${cbtn('team','By team')}${cbtn('manager','By team leader')}${cbtn('dept','By department')}</div>
-    ${compRows||'<p class="help">Nothing to roll up yet.</p>'}</div>`;
+    <div style="height:6px"></div>
+    ${compBody}</div>`;
 }
 function renderDash(){
  try{
