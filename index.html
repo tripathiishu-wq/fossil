@@ -1097,11 +1097,17 @@ function renderOrgChain(){
     const teamRow=myTeams.length
       ?`<div style="margin-top:4px">${myTeams.map(t=>`<span class="tag" style="margin-right:6px;color:var(--accent)">⊞ ${t.name}</span>`).join('')}</div>`
       :'';
-    const kids=kidsOf(o.name).map(k=>node(k,depth+1)).join('');
+    const kidNodes=kidsOf(o.name);
+    const kids=kidNodes.map(k=>node(k,depth+1)).join('');
+    // MINIMAL DISPLAY: FLM tiers collapse behind a one-tap toggle.
+    const collapsible=kidNodes.length&&kidNodes.every(k=>/flm|front line/i.test(dirMeta(k).job_title||''));
+    const kidHtml=collapsible
+      ?`<div style="margin-top:4px"><span class="tag" style="cursor:pointer;color:var(--accent)" onclick="const k=this.parentElement.nextElementSibling;const on=k.style.display!=='none';k.style.display=on?'none':'block';this.textContent=on?'+ ${kidNodes.length} team leaders':'\u2212 hide team leaders'">+ ${kidNodes.length} team leaders</span></div><div style="display:none">${kids}</div>`
+      :kids;
     return `<div style="margin-left:${depth*22}px;padding:7px 0;border-left:${depth?'2px solid var(--line2,#2E3850)':'none'};${depth?'padding-left:14px':''}">
       <span style="font-weight:700">${o.name}</span>
       <span class="tag" style="margin-left:8px;color:${bcol}">${tag} · B${titleBand(raw)}</span>
-      <div class="help" style="margin-top:2px">${meta}</div>${teamRow}${kids}</div>`;
+      <div class="help" style="margin-top:2px">${meta}</div>${teamRow}${kidHtml}</div>`;
   };
   return `<div class="panel" style="grid-column:1/-1;margin-bottom:4px"><h2>Org chart</h2>${
     Object.entries(ccs).map(([cc,list])=>
@@ -1714,11 +1720,11 @@ function renderTeams(){
   const {access}=myAccess();
   let visTeams=access==='full'?TEAMS:TEAMS.filter(t=>visibleTeamIds().has(t.id));
   visTeams=realTeams(visTeams);
-  // Department filter chips (built from org directory).
+  // Department filter — dropdown, not chips.
   const deptList=(ORGDIR||[]).filter(o=>o.kind==='department').map(o=>o.name).sort();
-  const chips=`<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px">
-    <button class="btn ${TEAMS_DEPT_FILTER===''?'':'alt '}sm" style="padding:5px 13px" onclick="setTeamsDeptFilter('')">All</button>
-    ${deptList.map(d=>`<button class="btn ${TEAMS_DEPT_FILTER===d?'':'alt '}sm" style="padding:5px 13px" onclick="setTeamsDeptFilter('${d.replace(/'/g,"\\'")}')">${d}</button>`).join('')}</div>`;
+  const chips=`<div style="margin-bottom:14px"><select onchange="setTeamsDeptFilter(this.value)" style="width:auto;padding:7px 12px;font-family:var(--mono);font-size:12px">
+    <option value="">All departments</option>
+    ${deptList.map(d=>`<option value="${d.replace(/"/g,'&quot;')}" ${TEAMS_DEPT_FILTER===d?'selected':''}>${d}</option>`).join('')}</select></div>`;
   if(TEAMS_DEPT_FILTER)visTeams=visTeams.filter(t=>(teamDept(t)||'').toLowerCase()===TEAMS_DEPT_FILTER.toLowerCase());
   if(!visTeams.length){el.innerHTML=chips+'<div class="empty">No teams in this view.</div>';return;}
   const vis=new Set(visibleMembers().map(m=>m.id));
@@ -2044,10 +2050,10 @@ function renderDash(){
   const avg=tot?Math.round(latest.reduce((s,a)=>s+a.result.composite,0)/tot):0;
   const teamsInScope=scope.teamIds.length;
   document.getElementById('dashStats').innerHTML=`
-    <div class="stat"><div class="stat-n">${teamsInScope}</div><div class="stat-l">${PURVIEW==='org'?'Teams':'Teams in scope'}</div></div>
-    <div class="stat"><div class="stat-n">${tot}</div><div class="stat-l">Assessed</div></div>
-    <div class="stat"><div class="stat-n">${avg||'—'}</div><div class="stat-l">Avg score</div></div>
-    <div class="stat"><div class="stat-n">${prof}</div><div class="stat-l">Proficient</div></div>`;
+    <div class="stat" style="cursor:pointer" onclick="show('teams')"><div class="stat-n">${teamsInScope}</div><div class="stat-l">${PURVIEW==='org'?'Teams \u2192':'Teams in scope \u2192'}</div></div>
+    <div class="stat" style="cursor:pointer" onclick="document.getElementById('dashAnalytics').scrollIntoView({behavior:'smooth'})"><div class="stat-n">${tot}</div><div class="stat-l">Assessed \u2192</div></div>
+    <div class="stat" style="cursor:pointer" onclick="show('reports')"><div class="stat-n">${avg||'\u2014'}</div><div class="stat-l">Avg score \u2192</div></div>
+    <div class="stat" style="cursor:pointer" onclick="show('assess')"><div class="stat-n">${prof}</div><div class="stat-l">Proficient \u2192</div></div>`;
   const membersInScope=scope.bandMembers.filter(m=>scope.teamIds.includes(m.team_id)
     &&(scope.level!=='dept'||(m.department||'').toLowerCase()===(scope.dept||'').toLowerCase())).length;
   const na=Math.max(0,membersInScope-tot);
@@ -2067,15 +2073,48 @@ function renderDash(){
 }
 
 /* ============ REPORTS ============ */
+let REP={dept:'',teamId:''};
+function repDrill(d,t){REP={dept:d||'',teamId:t||''};renderReports();}
 function renderReports(){
-  const a=latestPerPerson();
-  if(!a.length){document.getElementById('repTable').innerHTML='<div class="empty">No assessments yet.</div>';return;}
-  const rows=a.sort((x,y)=>y.result.composite-x.result.composite).map(r=>{const t=TEAMS.find(x=>x.id===r.team_id);
-    return `<tr><td><span class="dot" style="background:${bandColorHex[r.result.band]}"></span>${r.name}</td>
-      <td>${t?t.name:'—'}</td><td>${r.result.composite}</td><td>${r.result.band}</td>
-      <td>${new Date(r.created_at).toLocaleDateString()}</td></tr>`;}).join('');
-  document.getElementById('repTable').innerHTML=`<div style="overflow:auto"><table>
-    <thead><tr><th>Trainee</th><th>Team</th><th>Score</th><th>Status</th><th>Date</th></tr></thead><tbody>${rows}</tbody></table></div>`;
+  const host=document.getElementById('repTable');if(!host)return;
+  const mem=visibleMembers().filter(m=>realTeams(TEAMS).some(t=>t.id===m.team_id));
+  const byKey={};latestPerPerson().forEach(a=>{byKey[a.team_id+'|'+a.name]=a;});
+  const doneOf=(l)=>l.filter(m=>byKey[m.team_id+'|'+m.name]).length;
+  const avgOf=(l)=>{const s=l.map(m=>byKey[m.team_id+'|'+m.name]).filter(Boolean);return s.length?Math.round(s.reduce((x,a)=>x+a.result.composite,0)/s.length):null;};
+  const crumb=`<div class="purview" style="margin-bottom:14px">
+    <button class="${!REP.dept?'on':''}" onclick="repDrill('','')">Organisation</button>
+    ${REP.dept?`<span style="opacity:.4;padding:0 4px">\u203a</span><button class="${!REP.teamId?'on':''}" onclick="repDrill('${REP.dept.replace(/'/g,"\\'")}','')">${REP.dept}</button>`:''}
+    ${REP.teamId?`<span style="opacity:.4;padding:0 4px">\u203a</span><button class="on">${(TEAMS.find(t=>t.id===REP.teamId)||{}).name||'Team'}</button>`:''}</div>`;
+  if(!REP.dept){
+    const depts=[...new Set(mem.map(m=>m.department).filter(Boolean))].sort();
+    host.innerHTML=crumb+(depts.length?depts.map(d=>{
+      const l=mem.filter(m=>(m.department||'')===d);const av=avgOf(l);
+      return `<div class="metric" style="cursor:pointer" onclick="repDrill('${d.replace(/'/g,"\\'")}','')">
+        <span><b>${d}</b><div class="help" style="margin-top:2px">${doneOf(l)}/${l.length} assessed</div></span>
+        <span><b>${av??'\u2014'}</b> <span class="help">avg \u2192</span></span></div>`;}).join('')
+      :'<div class="empty">No assessable roster in your view.</div>');
+    return;
+  }
+  if(!REP.teamId){
+    const ts=realTeams(TEAMS).filter(t=>(teamDept(t)||'').toLowerCase()===REP.dept.toLowerCase()&&mem.some(m=>m.team_id===t.id));
+    host.innerHTML=crumb+(ts.length?ts.map(t=>{
+      const l=mem.filter(m=>m.team_id===t.id);const av=avgOf(l);
+      return `<div class="metric" style="cursor:pointer" onclick="repDrill('${REP.dept.replace(/'/g,"\\'")}','${t.id}')">
+        <span><b>${t.name}</b><div class="help" style="margin-top:2px">${t.manager?'Team Leader: '+t.manager+' \u00b7 ':''}${doneOf(l)}/${l.length} assessed</div></span>
+        <span><b>${av??'\u2014'}</b> <span class="help">avg \u2192</span></span></div>`;}).join('')
+      :'<div class="empty">No teams here yet.</div>');
+    return;
+  }
+  const l=mem.filter(m=>m.team_id===REP.teamId);
+  const rows=l.map(m=>{
+    const a=byKey[m.team_id+'|'+m.name];
+    const band=a&&a.result?a.result.band:'Not assessed';
+    return `<tr><td><span class="dot" style="background:${a?bandColorHex[band]:'#39415c'}"></span>${m.name}</td>
+      <td>${m.emp_id||''}</td><td>${a?a.result.composite:'\u2014'}</td><td>${band}</td>
+      <td>${a?new Date(a.created_at).toLocaleDateString():'\u2014'}</td></tr>`;}).join('');
+  host.innerHTML=crumb+`<div style="overflow:auto"><table>
+    <thead><tr><th>Member</th><th>ID</th><th>Score</th><th>Status</th><th>Date</th></tr></thead>
+    <tbody>${rows||'<tr><td colspan=5 class=empty>No members</td></tr>'}</tbody></table></div>`;
 }
 
 /* ============ EXPORT ============ */
