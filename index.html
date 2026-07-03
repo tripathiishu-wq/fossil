@@ -680,6 +680,7 @@ function setViewAs(name){
     const o=(ORGDIR||[]).find(x=>x.kind==='manager'&&x.name===name);
     if(o){const m=dirMeta(o);VIEW_AS={name:o.name,job_title:m.job_title||'Manager'};}
   }
+  resetDrill(); // new lens lands at its band's home level
   renderViewAs();
   applyNav();
   // If the previewed band can't see the current tab, land on Dashboard.
@@ -1086,6 +1087,7 @@ function renderOrgChain(){
     // Display language: dept managers are HODs; FLMs stay FLM; leadership keeps its title.
     const raw=m.job_title||'Manager';
     const tag=(raw.toLowerCase()==='manager')?('HOD'+(m.department?' · '+m.department:'')):raw;
+    const bcol=BAND_COLORS[titleBand(raw)]||'var(--muted)';
     const meta=[`${s.directs} direct${s.directs===1?'':'s'}`,`${s.span} in span`].filter(Boolean).join(' · ');
     const myTeams=TEAMS.filter(t=>t.manager&&t.manager.toLowerCase()===o.name.toLowerCase());
     const teamRow=myTeams.length
@@ -1094,13 +1096,65 @@ function renderOrgChain(){
     const kids=kidsOf(o.name).map(k=>node(k,depth+1)).join('');
     return `<div style="margin-left:${depth*22}px;padding:7px 0;border-left:${depth?'2px solid var(--line2,#2E3850)':'none'};${depth?'padding-left:14px':''}">
       <span style="font-weight:700">${o.name}</span>
-      <span class="tag" style="margin-left:8px">${tag}</span>
+      <span class="tag" style="margin-left:8px;color:${bcol}">${tag} · B${titleBand(raw)}</span>
       <div class="help" style="margin-top:2px">${meta}</div>${teamRow}${kids}</div>`;
   };
   return `<div class="panel" style="grid-column:1/-1;margin-bottom:4px"><h2>Org chart</h2>${
     Object.entries(ccs).map(([cc,list])=>
       `<div style="margin-bottom:10px"><div class="tag" style="letter-spacing:.08em">COST CENTRE · ${cc}</div>${
         list.map(o=>node(o,0)).join('')}</div>`).join('')}</div>`;
+}
+// ===== CLUSTERS =====
+// Two operating clusters: OPERATIONS (always on — it's why RampIQ exists) and
+// TRAINING (signed on explicitly). Trainers/LSS only exist once Training is on.
+function clusterOn(name){
+  if(name==='ops')return true;
+  return (ORGDIR||[]).some(o=>o.kind==='cluster'&&(o.name||'').toLowerCase()===name.toLowerCase());
+}
+async function signOnCluster(name){
+  try{
+    const {data,error}=await sb.from('org_directory').insert({
+      owner_id:session.user.id,org_id:CUR_ORG?CUR_ORG.id:null,kind:'cluster',name,meta:{}}).select().single();
+    if(error)throw error;
+    ORGDIR.push(data);
+  }catch(e){if(!/duplicate/i.test(e.message||''))alert('Could not sign on: '+(e.message||e));}
+  renderOrgDir();if(document.getElementById('v-onboard').classList.contains('on'))renderOnboard();
+}
+// ===== BAND COLOURS (one source of truth) =====
+const BAND_COLORS={1:'var(--green)',2:'var(--accent)',3:'var(--muted)'};
+function bandTag(title){
+  const b=titleBand(title);
+  return `<span class="tag" style="color:${BAND_COLORS[b]}">B${b}</span>`;
+}
+// ===== ADD FLM / TRAINER (org-chart writes, BI-linked) =====
+async function addFlm(){
+  const nameEl=document.getElementById('newFlmName');const hodEl=document.getElementById('newFlmHod');
+  const name=(nameEl.value||'').trim();const hod=hodEl.value;
+  if(!name||!hod){alert('Name and HOD are both needed.');return;}
+  const h=(ORGDIR||[]).find(o=>o.kind==='manager'&&o.name===hod);
+  const hm=h?dirMeta(h):{};
+  try{
+    const {data,error}=await sb.from('org_directory').insert({
+      owner_id:session.user.id,org_id:CUR_ORG?CUR_ORG.id:null,kind:'manager',name,
+      meta:{title:'FLM',dept:hm.department||null,cost_centre:hm.cost_center||null,reports_to:hod}
+    }).select().single();
+    if(error)throw error;
+    ORGDIR.push(data);nameEl.value='';buildMgrMap();renderOrgDir();
+  }catch(e){alert('Could not add FLM: '+(e.message||e));}
+}
+async function addTrainer(){
+  if(!clusterOn('training')){alert('Sign on the Training cluster first.');return;}
+  const nameEl=document.getElementById('newTrainerName');
+  const name=(nameEl.value||'').trim();if(!name)return;
+  const dir=(ORGDIR||[]).find(o=>o.kind==='manager'&&/director/i.test(dirMeta(o).job_title||''));
+  try{
+    const {data,error}=await sb.from('org_directory').insert({
+      owner_id:session.user.id,org_id:CUR_ORG?CUR_ORG.id:null,kind:'manager',name,
+      meta:{title:'Learning Service Specialist',dept:'TRAINING',reports_to:dir?dir.name:null}
+    }).select().single();
+    if(error)throw error;
+    ORGDIR.push(data);nameEl.value='';buildMgrMap();renderOrgDir();
+  }catch(e){alert('Could not add trainer: '+(e.message||e));}
 }
 // ===== TEAM LEADERS & TRAINERS (Org sub-tab) =====
 // TEAM LEADERS = FLMs, grouped under their HOD. TRAINERS = LSS / training titles.
@@ -1113,8 +1167,14 @@ function renderTeamLeadersTrainers(){
   const trainers=mgrs.filter(o=>isTrainerTitle(dirMeta(o).job_title));
   const tabBtn=(id,label)=>`<button class="btn ${TLT_TAB===id?'':'alt '}sm" style="padding:6px 14px" onclick="setTltTab('${id}')">${label}</button>`;
   let body='';
+  const hods=mgrs.filter(o=>(dirMeta(o).job_title||'').toLowerCase()==='manager');
   if(TLT_TAB==='leaders'){
-    if(!flms.length){body='<p class="help">No FLMs yet — add managers with title FLM.</p>';}
+    const addRow=`<div class="row" style="margin-top:14px">
+      <div style="flex:2"><input type="text" id="newFlmName" placeholder="Add FLM — name…" onkeydown="if(event.key==='Enter')addFlm()"></div>
+      <div style="flex:1"><select id="newFlmHod"><option value="">— under HOD —</option>${hods.map(h=>`<option value="${h.name}">${h.name} · ${dirMeta(h).department||''}</option>`).join('')}</select></div>
+      <div><button class="btn alt sm" onclick="addFlm()">+ Add FLM</button></div></div>
+      <p class="help" style="margin:6px 0 0">Department &amp; cost centre inherit from the HOD — the org chart does the rest.</p>`;
+    if(!flms.length){body='<p class="help">No FLMs yet — add your first below.</p>'+addRow;}
     else{
       // group by HOD (reports_to)
       const byHod={};flms.forEach(o=>{const h=dirMeta(o).reports_to||'—';(byHod[h]=byHod[h]||[]).push(o);});
@@ -1127,17 +1187,28 @@ function renderTeamLeadersTrainers(){
             const myTeams=TEAMS.filter(t=>t.manager&&t.manager.toLowerCase()===o.name.toLowerCase());
             return `<div class="metric" style="align-items:flex-start"><span><b>${o.name}</b>
               <div class="help" style="margin-top:2px">${s.directs} SSAs · ${myTeams.map(t=>t.name).join(', ')||'no team'}</div></span>
-              <span class="tag">FLM</span></div>`;}).join('')}</div>`;
-      }).join('');
+              <span><span class="tag" style="color:${BAND_COLORS[2]}">FLM · B2</span></span></div>`;}).join('')}</div>`;
+      }).join('')+addRow;
     }
   }else{
-    body=trainers.length?trainers.map(o=>{
-      const s=mgrStats(o.name);
-      const myTeams=TEAMS.filter(t=>t.manager&&t.manager.toLowerCase()===o.name.toLowerCase());
-      return `<div class="metric" style="align-items:flex-start"><span><b>${o.name}</b>
-        <div class="help" style="margin-top:2px">${s.directs} trainees · ${myTeams.map(t=>t.name).join(', ')||'no cluster yet'}</div></span>
-        <span class="tag" style="color:var(--amber)">TRAINER · LSS</span></div>`;}).join('')
-      :'<p class="help">No trainers yet. Add a manager with title "Learning Service Specialist" — the training cluster lives outside operations.</p>';
+    if(!clusterOn('training')){
+      body=`<div style="padding:14px;border:1px dashed var(--line2,#2E3850);border-radius:12px">
+        <b>Training cluster not signed on.</b>
+        <p class="help" style="margin:6px 0 12px">Trainers (Learning Service Specialists) live in the Training cluster — a separate world from operations. Sign on to onboard cohorts and LSS trainers.</p>
+        <button class="btn sig sm" onclick="signOnCluster('training')">Sign on Training cluster →</button></div>`;
+    }else{
+      const addRow=`<div class="row" style="margin-top:14px">
+        <div style="flex:2"><input type="text" id="newTrainerName" placeholder="Add trainer — name…" onkeydown="if(event.key==='Enter')addTrainer()"></div>
+        <div><button class="btn alt sm" onclick="addTrainer()">+ Add trainer</button></div></div>
+        <p class="help" style="margin:6px 0 0">Trainers are titled Learning Service Specialist, dept TRAINING — outside operations.</p>`;
+      body=(trainers.length?trainers.map(o=>{
+        const s=mgrStats(o.name);
+        const myTeams=TEAMS.filter(t=>t.manager&&t.manager.toLowerCase()===o.name.toLowerCase());
+        return `<div class="metric" style="align-items:flex-start"><span><b>${o.name}</b>
+          <div class="help" style="margin-top:2px">${s.directs} trainees · ${myTeams.map(t=>t.name).join(', ')||'no cluster yet'}</div></span>
+          <span class="tag" style="color:var(--amber)">TRAINER · LSS</span></div>`;}).join('')
+        :'<p class="help">Training cluster is on — add your first trainer below.</p>')+addRow;
+    }
   }
   return `<div class="panel" style="grid-column:1/-1;margin-bottom:4px">
     <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px">
@@ -1148,8 +1219,11 @@ function renderTeamLeadersTrainers(){
 function renderOrgDir(){
   const grid=document.getElementById('orgGrid');
   grid.innerHTML=renderOrgChain()+renderTeamLeadersTrainers()+ORGDIR_KINDS.map(([kind,label])=>{
-    const items=ORGDIR.filter(o=>o.kind===kind);
+    let items=ORGDIR.filter(o=>o.kind===kind);
     const isMgr=kind==='manager';
+    // Managers panel = leadership + HODs ONLY. FLMs & trainers live in the
+    // Team Leaders & Trainers tab — they are not managers.
+    if(isMgr)items=items.filter(o=>{const t=dirMeta(o).job_title||'';return !/flm|front line/i.test(t)&&!isTrainerTitle(t);});
     return `<div class="panel">
       <h2>${label}</h2>
       <div id="dir_${kind}">${items.length?items.map(o=>{
@@ -1271,7 +1345,23 @@ function renderJourneyRibbon(active){
 function renderOnboard(){
   renderJourneyRibbon('org');
   const grid=document.getElementById('onboardGrid');
-  grid.innerHTML=ORGDIR_KINDS.map(([kind,label])=>{
+  // ===== TWO CLUSTERS, TWO ONBOARDINGS =====
+  // Operations: departments → HODs → FLMs → SSA rosters. Always on.
+  // Training: signed on separately → LSS trainers → cohorts.
+  const trOn=clusterOn('training');
+  const clusterCards=`
+  <div class="panel" style="grid-column:1/-1;display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:16px;background:transparent;border:none;padding:0">
+    <div class="panel" style="border-color:${BAND_COLORS[2]}">
+      <h2>⚙ Operations cluster <span class="tag" style="color:var(--green)">ON</span></h2>
+      <p class="help" style="margin-top:4px">The floor. Onboard <b>departments → HODs → FLMs</b>, then each FLM builds their SSA roster. Scored on KPIs + sales behaviours.</p>
+    </div>
+    <div class="panel" style="border-color:${trOn?'var(--amber)':'var(--line)'}">
+      <h2>🎓 Training cluster ${trOn?'<span class="tag" style="color:var(--green)">ON</span>':'<span class="tag">OFF</span>'}</h2>
+      <p class="help" style="margin-top:4px">New-hire ramp. Onboard <b>LSS trainers → cohorts</b>, scored on ramp milestones. A separate world from operations.</p>
+      ${trOn?'':'<button class="btn alt sm" style="margin-top:8px" onclick="signOnCluster(\'training\')">Sign on Training cluster →</button>'}
+    </div>
+  </div>`;
+  grid.innerHTML=clusterCards+ORGDIR_KINDS.map(([kind,label])=>{
     const items=ORGDIR.filter(o=>o.kind===kind);
     return `<div class="panel">
       <h2>${label}</h2>
@@ -1693,20 +1783,61 @@ function assessMember(teamId,memberId){
 /* ============ DASHBOARD ============ */
 function latestPerPerson(){const map={};[...ASSESS].reverse().forEach(a=>{if(a&&a.result&&a.result.band)map[a.team_id+'|'+a.name]=a;});return Object.values(map);}
 
-/* ===== PURVIEWS ===== */
-let PURVIEW='org';      // 'org' | 'team' | 'manager'
-let PURVIEW_VAL=null;   // selected team id or manager name
+/* ===== DASHBOARD DRILL: Org -> Department -> Team ===== */
+// The dashboard follows the org chart. Band decides where you land:
+//   Band 1 (AGM/Director/Assignee) -> Organisation, can drill everywhere
+//   Band 2 HOD  -> their Department (org level locked out)
+//   Band 2 FLM  -> their Team only
+//   Band 3 SSA  -> self (their team, own row)
+let PURVIEW='org';      // retained for legacy checks; mirrors DRILL.level
+let PURVIEW_VAL=null;
+let DRILL=null;         // {level:'org'|'dept'|'team', dept, teamId, floor}
+function bandHome(){
+  const {access,me}=myAccess();
+  if(access==='full')return {level:'org',dept:null,teamId:null,floor:'org'};
+  if(me&&/flm|front line/i.test(me.job_title||'')){
+    const t=TEAMS.find(x=>x.manager&&x.manager.toLowerCase()===(me.name||'').toLowerCase())
+      ||TEAMS.find(x=>x.assigned_to&&x.assigned_to.toLowerCase()===(me.name||'').toLowerCase());
+    const o=(ORGDIR||[]).find(x=>x.kind==='manager'&&x.name.toLowerCase()===(me.name||'').toLowerCase());
+    return {level:'team',dept:o?dirMeta(o).department:null,teamId:t?t.id:null,floor:'team'};
+  }
+  if(access==='span'){
+    const o=(ORGDIR||[]).find(x=>x.kind==='manager'&&x.name.toLowerCase()===(me.name||'').toLowerCase());
+    return {level:'dept',dept:o?dirMeta(o).department:(me.department||null),teamId:null,floor:'dept'};
+  }
+  return {level:'team',dept:me?me.department:null,teamId:me&&me.team_id?me.team_id:null,floor:'team'};
+}
+function drillTo(level,dept,teamId){
+  const home=bandHome();
+  const rank={org:0,dept:1,team:2};
+  if(rank[level]<rank[home.floor])level=home.floor; // never drill above your band's floor
+  DRILL={level,
+    dept:dept!==undefined?dept:(DRILL?DRILL.dept:home.dept),
+    teamId:teamId!==undefined?teamId:(DRILL?DRILL.teamId:home.teamId),
+    floor:home.floor};
+  PURVIEW=level;
+  renderDash();
+}
+function resetDrill(){DRILL=null;PURVIEW='org';}
 function buildPurview(){
   const bar=document.getElementById('purviewBar');if(!bar)return;
-  bar.innerHTML=`
-    <button data-p="org" class="${PURVIEW==='org'?'on':''}" onclick="setPurview('org')">Org-wide</button>
-    <button data-p="team" class="${PURVIEW==='team'?'on':''}" onclick="setPurview('team')">By team</button>
-    <button data-p="dept" class="${PURVIEW==='dept'?'on':''}" onclick="setPurview('dept')">By department</button>`;
+  if(!DRILL)DRILL=bandHome();
+  PURVIEW=DRILL.level;
+  const d=DRILL;
+  const crumb=(label,on,click)=>on
+    ?`<button class="on" style="cursor:default">${label}</button>`
+    :`<button onclick="${click}">${label}</button>`;
+  let html='';
+  if(d.floor==='org')html+=crumb('Organisation',d.level==='org',"drillTo('org',null,null)");
+  if(d.dept&&d.floor!=='team')html+=(html?`<span style="opacity:.4;padding:0 4px">&rsaquo;</span>`:'')
+    +crumb(d.dept,d.level==='dept',`drillTo('dept','${(d.dept||'').replace(/'/g,"\\'")}',undefined)`);
+  if(d.level==='team'&&d.teamId){
+    const t=TEAMS.find(x=>x.id===d.teamId);
+    html+=(html?`<span style="opacity:.4;padding:0 4px">&rsaquo;</span>`:'')+crumb(t?t.name:'Team',true,'');
+  }
+  bar.innerHTML=html||crumb('Organisation',true,'');
 }
-function setPurview(p){PURVIEW=p;PURVIEW_VAL=null;buildPurview();renderDash();}
-// returns the set of team_ids in scope, plus a label
-// Everything is pre-filtered through the band engine (visibleTeamIds/visibleMembers)
-// so Band-2/3 users — and View-as previews — only ever see their slice.
+function setPurview(p){/* superseded by drillTo */drillTo(p==='org'?'org':DRILL?DRILL.level:'org');}
 // Departments are not teams: strip '<Dept> Team' / bare-dept rows everywhere.
 function realTeams(list){
   const depts=new Set((ORGDIR||[]).filter(o=>o.kind==='department').map(o=>o.name.toLowerCase()));
@@ -1717,62 +1848,79 @@ function realTeams(list){
 }
 function purviewScope(){
   const {access}=myAccess();
+  if(!DRILL)DRILL=bandHome();
+  const d=DRILL;PURVIEW=d.level;
   const bandTeams=realTeams(access==='full'?TEAMS:TEAMS.filter(t=>visibleTeamIds().has(t.id)));
   const bandMembers=visibleMembers();
-  if(PURVIEW==='org')return{teamIds:bandTeams.map(t=>t.id),label:access==='full'?'Across all teams':'Across your teams'};
-  if(PURVIEW==='team'){
-    const tid=PURVIEW_VAL||bandTeams[0]?.id;
-    return{teamIds:tid?[tid]:[],label:'Team: '+(bandTeams.find(t=>t.id===tid)?.name||'—'),pick:'team',bandTeams};
+  if(d.level==='team'&&d.teamId){
+    const t=bandTeams.find(x=>x.id===d.teamId);
+    return {teamIds:t?[t.id]:[],label:'Team: '+(t?t.name:'\u2014'),bandTeams,bandMembers,level:'team'};
   }
-  if(PURVIEW==='manager'){
-    // HIERARCHY-AWARE: the manager list comes from the org chart (HODs + FLMs),
-    // and picking one scopes to their entire subtree — a HOD sees all their
-    // FLMs' rosters, an FLM sees their own 10.
-    const bandNames=new Set(bandMembers.map(m=>m.name.toLowerCase()));
-    const dirMgrs=(ORGDIR||[]).filter(o=>o.kind==='manager')
-      .filter(o=>{const ids=subtreeMemberIds(o.name);return [...ids].some(id=>bandMembers.some(m=>m.id===id));})
-      .sort((a,b)=>{
-        const ta=(dirMeta(a).job_title||'').toLowerCase(),tb=(dirMeta(b).job_title||'').toLowerCase();
-        const rank=t=>/agm/.test(t)?0:/director/.test(t)?1:/^manager$/.test(t)?2:3;
-        return rank(ta)-rank(tb)||a.name.localeCompare(b.name);
-      });
-    const mgrsAll=dirMgrs.map(o=>{
-      const t=(dirMeta(o).job_title||'').toLowerCase();
-      const lbl=t==='manager'?('HOD'):(dirMeta(o).job_title||'');
-      return {name:o.name,label:o.name+(lbl?' · '+lbl:'')};
-    });
-    // Fallback: no org-chart managers yet → derive from member rows (old behaviour).
-    if(!mgrsAll.length){
-      [...new Set(bandMembers.map(m=>m.manager).filter(Boolean))].forEach(n=>mgrsAll.push({name:n,label:n}));
-    }
-    const mgr=PURVIEW_VAL||mgrsAll[0]?.name;
-    const subIds=mgr?subtreeMemberIds(mgr):new Set();
-    const inScope=bandMembers.filter(m=>subIds.has(m.id)||(m.manager&&m.manager.toLowerCase()===(mgr||'').toLowerCase()));
-    const memberNames=inScope.map(m=>m.name);
-    const teamIds=[...new Set(inScope.map(m=>m.team_id))];
-    return{teamIds,label:'Manager: '+(mgr||'—'),pick:'manager',mgr,memberNames,mgrsAll};
+  if(d.level==='dept'&&d.dept){
+    const teamIds=bandTeams.filter(t=>(teamDept(t)||'').toLowerCase()===d.dept.toLowerCase()).map(t=>t.id);
+    bandMembers.filter(m=>(m.department||'').toLowerCase()===d.dept.toLowerCase())
+      .forEach(m=>{if(!teamIds.includes(m.team_id)&&bandTeams.some(t=>t.id===m.team_id))teamIds.push(m.team_id);});
+    return {teamIds,label:'Department: '+d.dept,dept:d.dept,bandTeams,bandMembers,level:'dept'};
   }
-  if(PURVIEW==='dept'){
-    const deptsAll=[...new Set(bandMembers.map(m=>m.department).filter(Boolean))];
-    const dept=PURVIEW_VAL||deptsAll[0];
-    const memberNames=bandMembers.filter(m=>m.department===dept).map(m=>m.name);
-    const teamIds=[...new Set(bandMembers.filter(m=>m.department===dept).map(m=>m.team_id))];
-    return{teamIds,label:'Department: '+(dept||'—'),pick:'dept',dept,memberNames,deptsAll};
-  }
+  return {teamIds:bandTeams.map(t=>t.id),
+    label:access==='full'?'Across the organisation':'Across your purview',
+    bandTeams,bandMembers,level:'org'};
 }
-/* ============ ANALYTICS: PIE + COMPLETION (BI layer) ============ */
-// Independent scope: pie can slice Org-wide / Team / Team Leader / Department
-// without touching the main purview. Completion bars roll up the same numbers
-// at every level of the org.
+
+/* ===== DRILL CARDS: what you see at each level ===== */
+function renderDrillCards(scope){
+  const host=document.getElementById('dashTeams');if(!host)return;
+  const {byKey}=analyticsBase();
+  const d=DRILL||bandHome();
+  const doneOf=(list)=>list.filter(m=>byKey[m.team_id+'|'+m.name]).length;
+  if(d.level==='org'){
+    // ORG level -> DEPARTMENT cards. Click to drill in.
+    const depts=[...new Set(scope.bandMembers.map(m=>m.department).filter(Boolean))].sort();
+    host.previousElementSibling&&(host.previousElementSibling.textContent='Departments');
+    host.innerHTML=depts.length?depts.map(dp=>{
+      const l=scope.bandMembers.filter(m=>(m.department||'')===dp);
+      const tCount=scope.bandTeams.filter(t=>(teamDept(t)||'').toLowerCase()===dp.toLowerCase()).length;
+      const hod=(ORGDIR||[]).find(o=>o.kind==='manager'&&(dirMeta(o).job_title||'').toLowerCase()==='manager'&&(dirMeta(o).department||'').toLowerCase()===dp.toLowerCase());
+      const pct=l.length?Math.round(doneOf(l)/l.length*100):0;
+      return `<div class="metric" style="cursor:pointer" onclick="drillTo('dept','${dp.replace(/'/g,"\\'")}',undefined)">
+        <span><b>${dp}</b><div class="help" style="margin-top:2px">${hod?'HOD: '+hod.name+' \u00b7 ':''}${tCount} teams \u00b7 ${l.length} members</div></span>
+        <span><b style="color:${pct>=80?'var(--green)':pct>=40?'var(--amber)':'var(--accent)'}">${pct}%</b> <span class="help">assessed \u2192</span></span></div>`;
+    }).join(''):'<div class="empty">No departments yet \u2014 build the org chart.</div>';
+    return;
+  }
+  if(d.level==='dept'){
+    // DEPT level -> TEAM cards under this department. Click to drill in.
+    const teams=scope.bandTeams.filter(t=>scope.teamIds.includes(t.id));
+    host.previousElementSibling&&(host.previousElementSibling.textContent='Teams \u00b7 '+(d.dept||''));
+    host.innerHTML=teams.length?teams.map(t=>{
+      const l=scope.bandMembers.filter(m=>m.team_id===t.id);
+      const pct=l.length?Math.round(doneOf(l)/l.length*100):0;
+      return `<div class="metric" style="cursor:pointer" onclick="drillTo('team',undefined,'${t.id}')">
+        <span><b>${t.name}</b><div class="help" style="margin-top:2px">${t.manager?'Team Leader: '+t.manager+' \u00b7 ':''}${l.length} members</div></span>
+        <span><b style="color:${pct>=80?'var(--green)':pct>=40?'var(--amber)':'var(--accent)'}">${pct}%</b> <span class="help">assessed \u2192</span></span></div>`;
+    }).join(''):'<div class="empty">No teams under this department yet.</div>';
+    return;
+  }
+  // TEAM level -> member rows with status.
+  const t=TEAMS.find(x=>x.id===d.teamId);
+  host.previousElementSibling&&(host.previousElementSibling.textContent=t?t.name+' \u00b7 roster':'Roster');
+  const l=scope.bandMembers.filter(m=>m.team_id===d.teamId);
+  host.innerHTML=l.length?l.map(m=>{
+    const a=byKey[m.team_id+'|'+m.name];
+    const band=a&&a.result?a.result.band:'Not assessed';
+    const col=a?bandColorHex[band]:'#39415c';
+    return `<div class="metric"><span><span class="dot" style="background:${col}"></span>${m.name} <span class="help">${m.emp_id||''}</span></span>
+      <span>${a?('<b>'+a.result.composite+'</b> \u00b7 '+band):'<span class="help">not assessed</span>'}</span></div>`;
+  }).join(''):'<div class="empty">No members on this team yet.</div>';
+}
+/* ===== ANALYTICS: PIE + COMPLETION (BI layer) ===== */
 let PIE_MODE='org', PIE_VAL='', COMP_MODE='team';
 function setPieMode(m){PIE_MODE=m;PIE_VAL='';renderAnalytics();}
 function setPieVal(v){PIE_VAL=v;renderAnalytics();}
 function setCompMode(m){COMP_MODE=m;renderAnalytics();}
 function analyticsBase(){
-  // Band-scoped: everyone only ever analyses what their band can see.
   const mem=visibleMembers().filter(m=>realTeams(TEAMS).some(t=>t.id===m.team_id));
   const latest=latestPerPerson();
-  const key=(m)=>m.team_id+'|'+m.name;
   const byKey={};latest.forEach(a=>{byKey[a.team_id+'|'+a.name]=a;});
   return {mem,byKey};
 }
@@ -1802,7 +1950,7 @@ function pieSvg(mix){
     angle=a2;
   });
   const legend=Object.entries(mix).map(([k,v])=>
-    `<div class="metric" style="padding:3px 0"><span><span class="dot" style="background:${COLORS[k]}"></span>${k}</span><b>${v} · ${total?Math.round(v/total*100):0}%</b></div>`).join('');
+    `<div class="metric" style="padding:3px 0"><span><span class="dot" style="background:${COLORS[k]}"></span>${k}</span><b>${v} \u00b7 ${total?Math.round(v/total*100):0}%</b></div>`).join('');
   return `<div style="display:flex;gap:26px;align-items:center;flex-wrap:wrap">
     <svg width="180" height="180" viewBox="0 0 180 180">${paths}<circle cx="90" cy="90" r="46" fill="var(--bg,#0b0e18)"/>
       <text x="90" y="86" text-anchor="middle" fill="var(--text,#fff)" font-size="26" font-weight="700" font-family="inherit">${total}</text>
@@ -1811,7 +1959,7 @@ function pieSvg(mix){
 }
 function completionBar(label,done,total,extra){
   const pct=total?Math.round(done/total*100):0;
-  return `<div style="margin-bottom:10px"><div class="metric" style="padding:0 0 4px"><span>${label}${extra?` <span class="help">${extra}</span>`:''}</span><b>${pct}% · ${done}/${total}</b></div>
+  return `<div style="margin-bottom:10px"><div class="metric" style="padding:0 0 4px"><span>${label}${extra?` <span class="help">${extra}</span>`:''}</span><b>${pct}% \u00b7 ${done}/${total}</b></div>
     <div style="height:8px;border-radius:6px;background:var(--line,#242b40);overflow:hidden">
       <div style="height:100%;width:${pct}%;border-radius:6px;background:${pct>=80?'var(--green)':pct>=40?'var(--amber)':'var(--accent)'}"></div></div></div>`;
 }
@@ -1821,7 +1969,6 @@ function renderAnalytics(){
   const teams=realTeams(TEAMS).filter(t=>visibleTeamIds().has(t.id)||myAccess().access==='full');
   const flms=(ORGDIR||[]).filter(o=>o.kind==='manager'&&/flm|front line/i.test(dirMeta(o).job_title||''));
   const depts=[...new Set(mem.map(m=>m.department).filter(Boolean))].sort();
-  // ---- pie slice per scope ----
   let slice=mem, sub='';
   if(PIE_MODE==='team'){
     const tid=PIE_VAL||teams[0]?.id;
@@ -1832,22 +1979,21 @@ function renderAnalytics(){
     const who=PIE_VAL||names[0]||'';
     const ids=subtreeMemberIds(who);
     slice=mem.filter(m=>ids.has(m.id)||(m.manager&&m.manager.toLowerCase()===who.toLowerCase()));
-    sub=`<select onchange="setPieVal(this.value)" style="width:auto;padding:6px 10px;margin-left:10px">${names.map(n=>`<option value="${n}" ${n===who?'selected':''}>${n} · FLM</option>`).join('')}</select>`;
+    sub=`<select onchange="setPieVal(this.value)" style="width:auto;padding:6px 10px;margin-left:10px">${names.map(n=>`<option value="${n}" ${n===who?'selected':''}>${n} \u00b7 FLM</option>`).join('')}</select>`;
   }else if(PIE_MODE==='dept'){
-    const d=PIE_VAL||depts[0]||'';
-    slice=mem.filter(m=>(m.department||'')===d);
-    sub=`<select onchange="setPieVal(this.value)" style="width:auto;padding:6px 10px;margin-left:10px">${depts.map(x=>`<option value="${x}" ${x===d?'selected':''}>${x}</option>`).join('')}</select>`;
+    const dd=PIE_VAL||depts[0]||'';
+    slice=mem.filter(m=>(m.department||'')===dd);
+    sub=`<select onchange="setPieVal(this.value)" style="width:auto;padding:6px 10px;margin-left:10px">${depts.map(x=>`<option value="${x}" ${x===dd?'selected':''}>${x}</option>`).join('')}</select>`;
   }
   const pbtn=(id,l)=>`<button data-p="${id}" class="${PIE_MODE===id?'on':''}" onclick="setPieMode('${id}')">${l}</button>`;
-  // ---- completion rollups ----
   const doneOf=(list)=>list.filter(m=>byKey[m.team_id+'|'+m.name]).length;
   let compRows='';
   if(COMP_MODE==='team'){
-    compRows=teams.map(t=>{const l=mem.filter(m=>m.team_id===t.id);return completionBar(t.name,doneOf(l),l.length,t.manager?'· '+t.manager:'');}).join('');
+    compRows=teams.map(t=>{const l=mem.filter(m=>m.team_id===t.id);return l.length?completionBar(t.name,doneOf(l),l.length,t.manager?'\u00b7 '+t.manager:''):'';}).join('');
   }else if(COMP_MODE==='manager'){
-    compRows=flms.map(o=>{const ids=subtreeMemberIds(o.name);const l=mem.filter(m=>ids.has(m.id)||(m.manager&&m.manager.toLowerCase()===o.name.toLowerCase()));return l.length?completionBar(o.name,doneOf(l),l.length,'· '+(dirMeta(o).department||'')):'';}).join('');
+    compRows=flms.map(o=>{const ids=subtreeMemberIds(o.name);const l=mem.filter(m=>ids.has(m.id)||(m.manager&&m.manager.toLowerCase()===o.name.toLowerCase()));return l.length?completionBar(o.name,doneOf(l),l.length,'\u00b7 '+(dirMeta(o).department||'')):'';}).join('');
   }else if(COMP_MODE==='dept'){
-    compRows=depts.map(d=>{const l=mem.filter(m=>(m.department||'')===d);return completionBar(d,doneOf(l),l.length);}).join('');
+    compRows=depts.map(dd=>{const l=mem.filter(m=>(m.department||'')===dd);return completionBar(dd,doneOf(l),l.length);}).join('');
   }
   const cbtn=(id,l)=>`<button data-p="${id}" class="${COMP_MODE===id?'on':''}" onclick="setCompMode('${id}')">${l}</button>`;
   host.innerHTML=`
@@ -1863,30 +2009,6 @@ function renderDash(){
  try{
   buildPurview();
   const scope=purviewScope();
-  // optional second-row selector for team/manager
-  const selWrap=document.getElementById('purviewBar');
-  if(scope.pick==='team'){
-    const pool=scope.bandTeams||TEAMS;
-    const tid=PURVIEW_VAL||pool[0]?.id;
-    // MINIMAL FLOW: group teams under their manager instead of one mixed list.
-    const byMgr={};pool.forEach(t=>{const k=t.manager||'Unassigned';(byMgr[k]=byMgr[k]||[]).push(t);});
-    const groups=Object.keys(byMgr).sort((a,b)=>a==='Unassigned'?1:b==='Unassigned'?-1:a.localeCompare(b));
-    selWrap.insertAdjacentHTML('beforeend',
-      `<select style="width:auto;margin-left:10px;display:inline-block;padding:7px 10px" onchange="PURVIEW_VAL=this.value;renderDash()">`+
-      groups.map(g=>`<optgroup label="${g}">`+byMgr[g].map(t=>`<option value="${t.id}" ${t.id===tid?'selected':''}>${t.name}</option>`).join('')+`</optgroup>`).join('')+`</select>`);
-  }else if(scope.pick==='manager'){
-    const mgrs=scope.mgrsAll||[];
-    const cur=PURVIEW_VAL||mgrs[0]?.name;
-    selWrap.insertAdjacentHTML('beforeend',
-      `<select style="width:auto;margin-left:10px;display:inline-block;padding:7px 10px" onchange="PURVIEW_VAL=this.value;renderDash()">`+
-      (mgrs.length?mgrs.map(m=>`<option value="${m.name}" ${m.name===cur?'selected':''}>${m.label}</option>`).join(''):'<option>— no managers —</option>')+`</select>`);
-  }else if(scope.pick==='dept'){
-    const depts=scope.deptsAll||[];
-    const cur=PURVIEW_VAL||depts[0];
-    selWrap.insertAdjacentHTML('beforeend',
-      `<select style="width:auto;margin-left:10px;display:inline-block;padding:7px 10px" onchange="PURVIEW_VAL=this.value;renderDash()">`+
-      (depts.length?depts.map(d=>`<option value="${d}" ${d===cur?'selected':''}>${d}</option>`).join(''):'<option>— sync Workday for departments —</option>')+`</select>`);
-  }
   document.getElementById('dashLede').textContent=scope.label;
 
   // filter assessments to scope
@@ -1904,9 +2026,8 @@ function renderDash(){
     <div class="stat"><div class="stat-n">${tot}</div><div class="stat-l">Assessed</div></div>
     <div class="stat"><div class="stat-n">${avg||'—'}</div><div class="stat-l">Avg score</div></div>
     <div class="stat"><div class="stat-n">${prof}</div><div class="stat-l">Proficient</div></div>`;
-  const membersInScope=MEMBERS.filter(m=>scope.teamIds.includes(m.team_id)
-    &&(PURVIEW!=='manager'||(scope.memberNames&&scope.memberNames.includes(m.name)))
-    &&(PURVIEW!=='dept'||m.department===scope.dept)).length;
+  const membersInScope=scope.bandMembers.filter(m=>scope.teamIds.includes(m.team_id)
+    &&(scope.level!=='dept'||(m.department||'').toLowerCase()===(scope.dept||'').toLowerCase())).length;
   const na=Math.max(0,membersInScope-tot);
   const seg=[[prof,'var(--green)'],[dev,'var(--amber)'],[lag,'var(--red)'],[na,'var(--line)']];
   const sum=seg.reduce((s,x)=>s+x[0],0)||1;
@@ -1917,11 +2038,7 @@ function renderDash(){
   }else{
     segEl.innerHTML=seg.map(([n,c])=>n?`<div style="background:${c};width:${n/sum*100}%">${n/sum>=0.08?n:''}</div>`:'').join('');
   }
-  const teamsToShow=realTeams(TEAMS.filter(t=>scope.teamIds.includes(t.id)));
-  document.getElementById('dashTeams').innerHTML=teamsToShow.length?teamsToShow.map(t=>{const la=ASSESS.filter(a=>a.team_id===t.id&&a.result&&a.result.band);
-    const av=la.length?Math.round(la.reduce((s,a)=>s+a.result.composite,0)/la.length):0;
-    return `<div class="metric"><span>${t.name}</span><span>${la.length}/${MEMBERS.filter(m=>m.team_id===t.id).length} assessed · avg ${av||'—'}</span></div>`;}).join('')
-    :'<div class="empty">No teams in this view.</div>';
+  renderDrillCards(scope);
  }catch(e){console.error('renderDash error:',e);
    const ds=document.getElementById('dashStats');if(ds)ds.innerHTML='<div class="stat"><div class="stat-n">—</div><div class="stat-l">loading issue, retrying…</div></div>';}
  try{renderAnalytics();}catch(e){console.error('analytics error:',e);}
