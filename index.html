@@ -230,12 +230,13 @@
       <span><span class="dot" style="background:var(--red)"></span>Lagging</span>
       <span><span class="dot" style="background:var(--line)"></span>Not assessed</span></div></div>
   <div class="panel"><h2>Teams</h2><div id="dashTeams"></div></div>
+  <div id="dashAnalytics"></div>
 </div></div>
 
 <!-- TEAMS -->
 <div class="view" id="v-teams"><div class="wrap">
   <h1>Teams</h1><p class="lede">Pull a roster from a connected HR source, or build one by hand.</p>
-  <div class="btnrow"><button class="btn sig" onclick="openCreate()">+ Create team</button></div>
+  <div class="btnrow"><button class="btn sig" id="teamsPrimaryBtn" onclick="teamsPrimaryAction()">+ Create team</button></div>
   <div id="teamList"></div>
 </div></div>
 
@@ -606,6 +607,72 @@ function applyNav(){
   if(orgB)orgB.style.display=(access==='full')?'':'none';
   if(connB)connB.style.display=(access==='full')?'':'none';
   if(teamsB)teamsB.textContent=flm?'My Team':'Teams';
+  // FLM world: one team, so the primary action is adding people — not creating teams.
+  const pb=document.getElementById('teamsPrimaryBtn');
+  if(pb){
+    if(flm){pb.textContent='+ Add team member';}
+    else if(access!=='full'){pb.style.display='none';}
+    else{pb.style.display='';pb.textContent='+ Create team';}
+  }
+}
+function teamsPrimaryAction(){
+  if(isFlmView())openFlmAddMember();
+  else openCreate();
+}
+// ===== FLM QUICK-ADD =====
+// An FLM owns exactly one team. Team, manager, department, cost centre are all
+// LOCKED — inherited from the org chart. They only type name + ID.
+function openFlmAddMember(){
+  const {me}=myAccess();if(!me)return;
+  const myTeam=TEAMS.find(t=>t.manager&&t.manager.toLowerCase()===me.name.toLowerCase())
+    ||TEAMS.find(t=>t.assigned_to&&t.assigned_to.toLowerCase()===me.name.toLowerCase());
+  if(!myTeam){alert('No team is linked to you yet — ask your HOD.');return;}
+  const o=(ORGDIR||[]).find(x=>x.kind==='manager'&&x.name.toLowerCase()===me.name.toLowerCase());
+  const meta=o?dirMeta(o):{};
+  let bg=document.getElementById('flmAddModal');
+  if(!bg){
+    bg=document.createElement('div');bg.className='modal-bg';bg.id='flmAddModal';
+    bg.innerHTML=`<div class="modal"><h3>Add team member</h3>
+      <p class="help" style="margin-top:0" id="flmAddCtx"></p>
+      <label>Name</label><input type="text" id="flmMemName" placeholder="e.g. Priya Malhotra">
+      <label style="margin-top:10px">Employee ID</label><input type="text" id="flmMemId" placeholder="e.g. TD-CLS-1234">
+      <div class="btnrow" style="margin-top:16px">
+        <button class="btn sig" onclick="saveFlmMember()">Add to my team</button>
+        <button class="btn alt" onclick="document.getElementById('flmAddModal').classList.remove('on')">Cancel</button></div>
+      <div class="msg" id="flmAddMsg"></div></div>`;
+    document.body.appendChild(bg);
+  }
+  document.getElementById('flmAddCtx').innerHTML=
+    `Joins <b>${myTeam.name}</b> · reports to <b>${me.name}</b>${meta.department?' · '+meta.department:''}${meta.cost_center?' · '+meta.cost_center:''} — inherited from your org chart, nothing else to fill.`;
+  document.getElementById('flmMemName').value='';document.getElementById('flmMemId').value='';
+  const msg=document.getElementById('flmAddMsg');msg.className='msg';msg.textContent='';
+  bg.classList.add('on');
+}
+async function saveFlmMember(){
+  const {me}=myAccess();if(!me)return;
+  const name=document.getElementById('flmMemName').value.trim();
+  const empId=document.getElementById('flmMemId').value.trim();
+  const msg=document.getElementById('flmAddMsg');
+  if(!name){msg.textContent='Name is required.';msg.className='msg err';return;}
+  const myTeam=TEAMS.find(t=>t.manager&&t.manager.toLowerCase()===me.name.toLowerCase())
+    ||TEAMS.find(t=>t.assigned_to&&t.assigned_to.toLowerCase()===me.name.toLowerCase());
+  if(!myTeam){msg.textContent='No team linked to you.';msg.className='msg err';return;}
+  const o=(ORGDIR||[]).find(x=>x.kind==='manager'&&x.name.toLowerCase()===me.name.toLowerCase());
+  const meta=o?dirMeta(o):{};
+  try{
+    // Insert guaranteed columns first; enrich after (delivery rule).
+    const {data,error}=await sb.from('members').insert({
+      owner_id:session.user.id,team_id:myTeam.id,name}).select().single();
+    if(error)throw error;
+    try{await sb.from('members').update({
+      org_id:myTeam.org_id||null,emp_id:empId||null,manager:me.name,
+      role:'Senior Sales Associate',job_title:'Senior Sales Associate',
+      department:meta.department||null,cost_center:meta.cost_center||null
+    }).eq('id',data.id);}catch(_){}
+    await loadAll();
+    msg.textContent='Added.';msg.className='msg ok';
+    setTimeout(()=>{const m=document.getElementById('flmAddModal');if(m)m.classList.remove('on');renderTeams();},600);
+  }catch(e){msg.textContent='Could not add: '+(e.message||e);msg.className='msg err';}
 }
 function setViewAs(name){
   if(!name){VIEW_AS=null;}
@@ -1098,6 +1165,11 @@ function renderOrgDir(){
         } else if(kind==='department'){
           const n=MEMBERS.filter(x=>(x.department||'').toLowerCase()===o.name.toLowerCase()).length;
           if(n)sub=`<div class="help" style="margin-top:2px">${n} ${n===1?'person':'people'}</div>`;
+        } else if(kind==='job_title'){
+          // BAND INFO: every title maps into the IAM band model.
+          const b=titleBand(o.name);
+          const bl=b===1?'Full · Assignee':b===2?'Span · subtree':'Self only';
+          sub=`<div class="help" style="margin-top:2px"><span class="tag" style="color:${b===1?'var(--green)':b===2?'var(--accent)':'var(--muted)'}">BAND ${b}</span> ${bl}</div>`;
         }
         return `<div class="metric" style="align-items:flex-start"><span>${o.name}${sub}</span><span><button class="btn alt sm" style="padding:3px 9px" onclick="removeOrgDirItem('${o.id}')">remove</button></span></div>`;}).join(''):
         '<p class="help" style="margin:0">None yet.</p>'}</div>
@@ -1345,7 +1417,32 @@ function pickKind2(el){
 }
 function openCreate(){
   document.getElementById('createModal').classList.add('on');tmsg('');
-  const tm=document.getElementById('newTeamManager');if(tm)tm.innerHTML='<option value="">— select manager —</option>'+ORGDIR.filter(o=>o.kind==='manager').map(o=>`<option value="${o.name}">${o.name}</option>`).join('');
+  // ===== ORG BI: teams belong to TEAM LEADERS (FLMs) or TRAINERS (LSS) — never
+  // to AGM/Director/HODs. One team per FLM: leaders who already own a team are
+  // locked out. Grouped under their HOD so the hierarchy reads at a glance.
+  const tm=document.getElementById('newTeamManager');
+  if(tm){
+    const mgrs=(ORGDIR||[]).filter(o=>o.kind==='manager');
+    const eligible=mgrs.filter(o=>{const t=dirMeta(o).job_title||'';return /flm|front line/i.test(t)||isTrainerTitle(t);});
+    const owned=new Set(TEAMS.filter(t=>t.manager).map(t=>t.manager.toLowerCase()));
+    const byHod={};eligible.forEach(o=>{const h=dirMeta(o).reports_to||'Other';(byHod[h]=byHod[h]||[]).push(o);});
+    tm.innerHTML='<option value="">— select team leader / trainer —</option>'+
+      Object.keys(byHod).sort().map(hod=>`<optgroup label="HOD · ${hod}">`+
+        byHod[hod].map(o=>{
+          const t=dirMeta(o).job_title||'';const isFlm=/flm|front line/i.test(t);
+          const has=isFlm&&owned.has(o.name.toLowerCase());
+          return `<option value="${o.name}" ${has?'disabled':''}>${o.name} · ${isFlm?'FLM':'LSS'}${has?' — has a team':''}</option>`;
+        }).join('')+`</optgroup>`).join('');
+    tm.onchange=()=>{
+      // BI AUTOMATION: leader choice drives team type + a suggested name.
+      const o=mgrs.find(x=>x.name===tm.value);if(!o)return;
+      const meta=dirMeta(o);const isFlm=/flm|front line/i.test(meta.job_title||'');
+      NEW_TEAM_KIND=isFlm?'operations':'training';
+      document.querySelectorAll('.kindopt').forEach(k=>k.classList.toggle('on',k.dataset.kind===NEW_TEAM_KIND));
+      const nameEl=document.getElementById('newTeamName');
+      if(nameEl&&!nameEl.value.trim()&&meta.department)nameEl.value=meta.department+' - '+o.name;
+    };
+  }
   document.getElementById('srcConn').innerHTML=CONNS.map(c=>`<div class="src" data-conn="${c.id}" onclick="pickConn(this)">
     <div class="src-ico">${c.kind==='workday'?'WD':'MCP'}</div><div><b>${c.kind==='workday'?'Workday':'MCP / HR'}</b>
     <div class="help">${c.base_url||''}</div></div></div>`).join('');
@@ -1663,6 +1760,105 @@ function purviewScope(){
     return{teamIds,label:'Department: '+(dept||'—'),pick:'dept',dept,memberNames,deptsAll};
   }
 }
+/* ============ ANALYTICS: PIE + COMPLETION (BI layer) ============ */
+// Independent scope: pie can slice Org-wide / Team / Team Leader / Department
+// without touching the main purview. Completion bars roll up the same numbers
+// at every level of the org.
+let PIE_MODE='org', PIE_VAL='', COMP_MODE='team';
+function setPieMode(m){PIE_MODE=m;PIE_VAL='';renderAnalytics();}
+function setPieVal(v){PIE_VAL=v;renderAnalytics();}
+function setCompMode(m){COMP_MODE=m;renderAnalytics();}
+function analyticsBase(){
+  // Band-scoped: everyone only ever analyses what their band can see.
+  const mem=visibleMembers().filter(m=>realTeams(TEAMS).some(t=>t.id===m.team_id));
+  const latest=latestPerPerson();
+  const key=(m)=>m.team_id+'|'+m.name;
+  const byKey={};latest.forEach(a=>{byKey[a.team_id+'|'+a.name]=a;});
+  return {mem,byKey};
+}
+function mixOf(members,byKey){
+  const mix={Proficient:0,Developing:0,Lagging:0,'Not assessed':0};
+  members.forEach(m=>{
+    const a=byKey[m.team_id+'|'+m.name];
+    if(a&&a.result&&a.result.band)mix[a.result.band]=(mix[a.result.band]||0)+1;
+    else mix['Not assessed']++;
+  });
+  return mix;
+}
+function pieSvg(mix){
+  const COLORS={Proficient:'#2dd4a8',Developing:'#f5b544',Lagging:'#ff5a5f','Not assessed':'#39415c'};
+  const total=Object.values(mix).reduce((a,b)=>a+b,0);
+  if(!total)return '<p class="help">No members in this slice.</p>';
+  let angle=-Math.PI/2;const cx=90,cy=90,r=80;let paths='';
+  Object.entries(mix).forEach(([k,v])=>{
+    if(!v)return;
+    const frac=v/total;
+    if(frac>=0.999){paths+=`<circle cx="${cx}" cy="${cy}" r="${r}" fill="${COLORS[k]}"/>`;angle+=frac*2*Math.PI;return;}
+    const a2=angle+frac*2*Math.PI;
+    const x1=cx+r*Math.cos(angle),y1=cy+r*Math.sin(angle);
+    const x2=cx+r*Math.cos(a2),y2=cy+r*Math.sin(a2);
+    const large=frac>0.5?1:0;
+    paths+=`<path d="M${cx},${cy} L${x1.toFixed(2)},${y1.toFixed(2)} A${r},${r} 0 ${large} 1 ${x2.toFixed(2)},${y2.toFixed(2)} Z" fill="${COLORS[k]}"/>`;
+    angle=a2;
+  });
+  const legend=Object.entries(mix).map(([k,v])=>
+    `<div class="metric" style="padding:3px 0"><span><span class="dot" style="background:${COLORS[k]}"></span>${k}</span><b>${v} · ${total?Math.round(v/total*100):0}%</b></div>`).join('');
+  return `<div style="display:flex;gap:26px;align-items:center;flex-wrap:wrap">
+    <svg width="180" height="180" viewBox="0 0 180 180">${paths}<circle cx="90" cy="90" r="46" fill="var(--bg,#0b0e18)"/>
+      <text x="90" y="86" text-anchor="middle" fill="var(--text,#fff)" font-size="26" font-weight="700" font-family="inherit">${total}</text>
+      <text x="90" y="104" text-anchor="middle" fill="var(--muted,#8a93ad)" font-size="10" font-family="inherit">MEMBERS</text></svg>
+    <div style="flex:1;min-width:200px">${legend}</div></div>`;
+}
+function completionBar(label,done,total,extra){
+  const pct=total?Math.round(done/total*100):0;
+  return `<div style="margin-bottom:10px"><div class="metric" style="padding:0 0 4px"><span>${label}${extra?` <span class="help">${extra}</span>`:''}</span><b>${pct}% · ${done}/${total}</b></div>
+    <div style="height:8px;border-radius:6px;background:var(--line,#242b40);overflow:hidden">
+      <div style="height:100%;width:${pct}%;border-radius:6px;background:${pct>=80?'var(--green)':pct>=40?'var(--amber)':'var(--accent)'}"></div></div></div>`;
+}
+function renderAnalytics(){
+  const host=document.getElementById('dashAnalytics');if(!host)return;
+  const {mem,byKey}=analyticsBase();
+  const teams=realTeams(TEAMS).filter(t=>visibleTeamIds().has(t.id)||myAccess().access==='full');
+  const flms=(ORGDIR||[]).filter(o=>o.kind==='manager'&&/flm|front line/i.test(dirMeta(o).job_title||''));
+  const depts=[...new Set(mem.map(m=>m.department).filter(Boolean))].sort();
+  // ---- pie slice per scope ----
+  let slice=mem, sub='';
+  if(PIE_MODE==='team'){
+    const tid=PIE_VAL||teams[0]?.id;
+    slice=mem.filter(m=>m.team_id===tid);
+    sub=`<select onchange="setPieVal(this.value)" style="width:auto;padding:6px 10px;margin-left:10px">${teams.map(t=>`<option value="${t.id}" ${t.id===tid?'selected':''}>${t.name}</option>`).join('')}</select>`;
+  }else if(PIE_MODE==='manager'){
+    const names=flms.map(o=>o.name);
+    const who=PIE_VAL||names[0]||'';
+    const ids=subtreeMemberIds(who);
+    slice=mem.filter(m=>ids.has(m.id)||(m.manager&&m.manager.toLowerCase()===who.toLowerCase()));
+    sub=`<select onchange="setPieVal(this.value)" style="width:auto;padding:6px 10px;margin-left:10px">${names.map(n=>`<option value="${n}" ${n===who?'selected':''}>${n} · FLM</option>`).join('')}</select>`;
+  }else if(PIE_MODE==='dept'){
+    const d=PIE_VAL||depts[0]||'';
+    slice=mem.filter(m=>(m.department||'')===d);
+    sub=`<select onchange="setPieVal(this.value)" style="width:auto;padding:6px 10px;margin-left:10px">${depts.map(x=>`<option value="${x}" ${x===d?'selected':''}>${x}</option>`).join('')}</select>`;
+  }
+  const pbtn=(id,l)=>`<button data-p="${id}" class="${PIE_MODE===id?'on':''}" onclick="setPieMode('${id}')">${l}</button>`;
+  // ---- completion rollups ----
+  const doneOf=(list)=>list.filter(m=>byKey[m.team_id+'|'+m.name]).length;
+  let compRows='';
+  if(COMP_MODE==='team'){
+    compRows=teams.map(t=>{const l=mem.filter(m=>m.team_id===t.id);return completionBar(t.name,doneOf(l),l.length,t.manager?'· '+t.manager:'');}).join('');
+  }else if(COMP_MODE==='manager'){
+    compRows=flms.map(o=>{const ids=subtreeMemberIds(o.name);const l=mem.filter(m=>ids.has(m.id)||(m.manager&&m.manager.toLowerCase()===o.name.toLowerCase()));return l.length?completionBar(o.name,doneOf(l),l.length,'· '+(dirMeta(o).department||'')):'';}).join('');
+  }else if(COMP_MODE==='dept'){
+    compRows=depts.map(d=>{const l=mem.filter(m=>(m.department||'')===d);return completionBar(d,doneOf(l),l.length);}).join('');
+  }
+  const cbtn=(id,l)=>`<button data-p="${id}" class="${COMP_MODE===id?'on':''}" onclick="setCompMode('${id}')">${l}</button>`;
+  host.innerHTML=`
+  <div class="panel"><h2>Proficiency breakdown</h2>
+    <div class="purview" style="margin:10px 0 14px">${pbtn('org','Org-wide')}${pbtn('team','Team')}${pbtn('manager','Team Leader')}${pbtn('dept','Department')}${sub}</div>
+    ${pieSvg(mixOf(slice,byKey))}</div>
+  <div class="panel"><h2>Assessment completion</h2>
+    ${completionBar('Organisation-wide',doneOf(mem),mem.length)}
+    <div class="purview" style="margin:14px 0">${cbtn('team','By team')}${cbtn('manager','By team leader')}${cbtn('dept','By department')}</div>
+    ${compRows||'<p class="help">Nothing to roll up yet.</p>'}</div>`;
+}
 function renderDash(){
  try{
   buildPurview();
@@ -1728,6 +1924,7 @@ function renderDash(){
     :'<div class="empty">No teams in this view.</div>';
  }catch(e){console.error('renderDash error:',e);
    const ds=document.getElementById('dashStats');if(ds)ds.innerHTML='<div class="stat"><div class="stat-n">—</div><div class="stat-l">loading issue, retrying…</div></div>';}
+ try{renderAnalytics();}catch(e){console.error('analytics error:',e);}
 }
 
 /* ============ REPORTS ============ */
