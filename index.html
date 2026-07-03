@@ -1090,7 +1090,7 @@ function renderOrgChain(){
     const m=dirMeta(o);const s=mgrStats(o.name);
     // Display language: dept managers are HODs; FLMs stay FLM; leadership keeps its title.
     const raw=m.job_title||'Manager';
-    const tag=(raw.toLowerCase()==='manager')?('HOD'+(m.department?' · '+m.department:'')):raw;
+    const tag=isHodTitle(raw)?('HOD'+(m.department?' · '+m.department:'')):raw;
     const bcol=BAND_COLORS[titleBand(raw)]||'var(--muted)';
     const meta=[`${s.directs} direct${s.directs===1?'':'s'}`,`${s.span} in span`].filter(Boolean).join(' · ');
     const myTeams=TEAMS.filter(t=>t.manager&&t.manager.toLowerCase()===o.name.toLowerCase());
@@ -1169,7 +1169,15 @@ async function addTrainer(){
 // ===== TEAM LEADERS & TRAINERS (Org sub-tab) =====
 // TEAM LEADERS = FLMs, grouped under their HOD. TRAINERS = LSS / training titles.
 let TLT_TAB='leaders'; // 'leaders' | 'trainers'
+let TLT_OPEN=false;    // collapsed by default — minimal display
+function toggleTlt(){TLT_OPEN=!TLT_OPEN;renderOrgDir();}
 function setTltTab(t){TLT_TAB=t;renderOrgDir();}
+function isHodTitle(t){
+  // HOD = any Band-2 title that isn't an FLM or a trainer. Survives renames
+  // like "OPS MANAGER" — the band, not the string, is the truth.
+  if(/flm|front line/i.test(t||'')||isTrainerTitle(t))return false;
+  return titleBand(t)===2;
+}
 function isTrainerTitle(t){return /lss|trainer|learning service|learning specialist/i.test(t||'');}
 function renderTeamLeadersTrainers(){
   const mgrs=(ORGDIR||[]).filter(o=>o.kind==='manager');
@@ -1177,7 +1185,7 @@ function renderTeamLeadersTrainers(){
   const trainers=mgrs.filter(o=>isTrainerTitle(dirMeta(o).job_title));
   const tabBtn=(id,label)=>`<button class="btn ${TLT_TAB===id?'':'alt '}sm" style="padding:6px 14px" onclick="setTltTab('${id}')">${label}</button>`;
   let body='';
-  const hods=mgrs.filter(o=>(dirMeta(o).job_title||'').toLowerCase()==='manager');
+  const hods=mgrs.filter(o=>isHodTitle(dirMeta(o).job_title));
   if(TLT_TAB==='leaders'){
     const addRow=`<div class="row" style="margin-top:14px">
       <div style="flex:2"><input type="text" id="newFlmName" placeholder="Add FLM — name…" onkeydown="if(event.key==='Enter')addFlm()"></div>
@@ -1220,15 +1228,22 @@ function renderTeamLeadersTrainers(){
         :'<p class="help">Training cluster is on — add your first trainer below.</p>')+addRow;
     }
   }
-  return `<div class="panel" style="grid-column:1/-1;margin-bottom:4px">
+  const summary=`${flms.length} FLMs \u00b7 ${trainers.length} trainer${trainers.length===1?'':'s'}${clusterOn('training')?'':' \u00b7 Training cluster OFF'}`;
+  if(!TLT_OPEN){
+    return `<div class="panel" style="grid-column:1/-1;margin-top:4px;cursor:pointer" onclick="toggleTlt()">
+      <div style="display:flex;justify-content:space-between;align-items:center">
+        <h2 style="margin:0">Team Leaders &amp; Trainers <span class="help" style="font-weight:400">${summary}</span></h2>
+        <span class="tag" style="color:var(--accent)">expand \u2193</span></div></div>`;
+  }
+  return `<div class="panel" style="grid-column:1/-1;margin-top:4px">
     <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px">
-      <h2 style="margin:0">Team Leaders &amp; Trainers</h2>
+      <h2 style="margin:0;cursor:pointer" onclick="toggleTlt()">Team Leaders &amp; Trainers <span class="tag" style="color:var(--accent)">collapse \u2191</span></h2>
       <div class="btnrow">${tabBtn('leaders','Team Leaders')}${tabBtn('trainers','Trainers')}</div></div>
     <div style="margin-top:12px">${body}</div></div>`;
 }
 function renderOrgDir(){
   const grid=document.getElementById('orgGrid');
-  grid.innerHTML=renderOrgChain()+renderTeamLeadersTrainers()+ORGDIR_KINDS.map(([kind,label])=>{
+  grid.innerHTML=renderOrgChain()+ORGDIR_KINDS.map(([kind,label])=>{
     let items=ORGDIR.filter(o=>o.kind===kind);
     const isMgr=kind==='manager';
     // Managers panel = leadership + HODs ONLY. FLMs & trainers live in the
@@ -1260,6 +1275,8 @@ function renderOrgDir(){
       <div class="row" style="margin-top:10px">
         <div style="flex:2"><input type="text" id="new_${kind}" placeholder="Add ${label.toLowerCase().replace(/s$/,'')}…"
           onkeydown="if(event.key==='Enter')addOrgDirItem('${kind}')"></div>
+        ${kind==='job_title'?`<div><select id="new_job_title_band" style="width:auto;padding:7px 9px">
+          <option value="1">Band 1</option><option value="2">Band 2</option><option value="3" selected>Band 3</option></select></div>`:''}
         <div><button class="btn alt sm" onclick="addOrgDirItem('${kind}')">+ Add</button></div>
       </div>
       ${isMgr?`<div class="row" style="margin-top:8px">
@@ -1267,6 +1284,7 @@ function renderOrgDir(){
         <div style="flex:1"><select id="newmgr_title">${orgDirOptions('job_title')}</select></div>
       </div><p class="help" style="margin:6px 0 0">A manager's department & title flow down to everyone reporting to them.</p>`:''}
       </div>`;}).join('');
+  grid.innerHTML+=renderTeamLeadersTrainers();
 }
 async function addOrgDirItem(kind){
   const el=document.getElementById('new_'+kind);const name=el.value.trim();if(!name)return;
@@ -1274,6 +1292,11 @@ async function addOrgDirItem(kind){
   // Insert ONLY columns guaranteed to exist. This can't fail on a missing
   // optional column — the Org tab always works regardless of migrations.
   const base={owner_id:session.user.id,org_id:orgId,kind,name};
+  // Job titles carry a band from birth — read the picker before anything else.
+  if(kind==='job_title'){
+    const bsel=document.getElementById('new_job_title_band');
+    if(bsel)setTitleBand(name,bsel.value);
+  }
   let {data,error}=await sb.from('org_directory').insert(base).select().single();
   if(error){
     if(error.code==='23505'){el.value='';return;}
@@ -1761,7 +1784,7 @@ function renderTeams(){
           ${t.assigned_to?'<span class="tag" style="margin-left:6px;color:var(--amber)">DELEGATED</span>':''}</div>
           <div class="help" style="margin-top:2px">${mem.length} members \u00b7 ${assessed} assessed \u00b7 ${t.source}${own?' \u00b7 '+own:''}</div>${assign}</div>
         <span class="tag">open \u2192</span></div></div>`;};
-  const hod=TEAMS_DEPT_FILTER!=='*'?(ORGDIR||[]).find(o=>o.kind==='manager'&&(dirMeta(o).job_title||'').toLowerCase()==='manager'&&(dirMeta(o).department||'').toLowerCase()===TEAMS_DEPT_FILTER.toLowerCase()):null;
+  const hod=TEAMS_DEPT_FILTER!=='*'?(ORGDIR||[]).find(o=>o.kind==='manager'&&isHodTitle(dirMeta(o).job_title)&&(dirMeta(o).department||'').toLowerCase()===TEAMS_DEPT_FILTER.toLowerCase()):null;
   const header=`<div class="tag" style="letter-spacing:.08em;margin:0 0 10px;display:block;color:${TEAMS_DEPT_FILTER==='*'?'var(--amber)':'var(--accent)'}">${TEAMS_DEPT_FILTER==='*'?'TRAINING CLUSTER \u00b7 TRAINERS / LSS':'OPERATIONS \u00b7 '+TEAMS_DEPT_FILTER+(hod?' \u00b7 HOD: '+hod.name:'')}</div>`;
   el.innerHTML=chips+header+visTeams.map(card).join('');
 }
@@ -1896,7 +1919,7 @@ function renderDrillCards(scope){
     host.innerHTML=depts.length?depts.map(dp=>{
       const l=scope.bandMembers.filter(m=>(m.department||'')===dp);
       const tCount=scope.bandTeams.filter(t=>(teamDept(t)||'').toLowerCase()===dp.toLowerCase()).length;
-      const hod=(ORGDIR||[]).find(o=>o.kind==='manager'&&(dirMeta(o).job_title||'').toLowerCase()==='manager'&&(dirMeta(o).department||'').toLowerCase()===dp.toLowerCase());
+      const hod=(ORGDIR||[]).find(o=>o.kind==='manager'&&isHodTitle(dirMeta(o).job_title)&&(dirMeta(o).department||'').toLowerCase()===dp.toLowerCase());
       const pct=l.length?Math.round(doneOf(l)/l.length*100):0;
       return `<div class="metric" style="cursor:pointer" onclick="drillTo('dept','${dp.replace(/'/g,"\\'")}',undefined)">
         <span><b>${dp}</b><div class="help" style="margin-top:2px">${hod?'HOD: '+hod.name+' \u00b7 ':''}${tCount} teams \u00b7 ${l.length} members</div></span>
