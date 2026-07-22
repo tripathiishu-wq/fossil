@@ -1786,17 +1786,36 @@ function renderTeams(){
         <span class="tag">open \u2192</span></div></div>`;};
   const hod=TEAMS_DEPT_FILTER!=='*'?(ORGDIR||[]).find(o=>o.kind==='manager'&&isHodTitle(dirMeta(o).job_title)&&(dirMeta(o).department||'').toLowerCase()===TEAMS_DEPT_FILTER.toLowerCase()):null;
   const header=`<div class="tag" style="letter-spacing:.08em;margin:0 0 10px;display:block;color:${TEAMS_DEPT_FILTER==='*'?'var(--amber)':'var(--accent)'}">${TEAMS_DEPT_FILTER==='*'?'TRAINING CLUSTER \u00b7 TRAINERS / LSS':'OPERATIONS \u00b7 '+TEAMS_DEPT_FILTER+(hod?' \u00b7 HOD: '+hod.name:'')}</div>`;
-  el.innerHTML=chips+header+visTeams.map(card).join('');
+  // Department pie: the same BI everywhere — this dept's proficiency mix at a glance.
+  const {byKey:tk}=analyticsBase();
+  const deptMem=MEMBERS.filter(m=>visTeams.some(t=>t.id===m.team_id)&&(access==='full'||vis.has(m.id)));
+  const deptPie=`<div class="panel" style="margin-bottom:16px"><h2>${TEAMS_DEPT_FILTER==='*'?'Training cluster':TEAMS_DEPT_FILTER} \u00b7 proficiency</h2>${pieSvg(mixOf(deptMem,tk))}</div>`;
+  el.innerHTML=chips+header+deptPie+visTeams.map(card).join('');
 }
 function openTeam(id){
   const t=TEAMS.find(x=>x.id===id),mem=MEMBERS.filter(m=>m.team_id===id);
+  const teamScored=mem.map(mm=>ASSESS.filter(x=>x.team_id===id&&x.name.startsWith(mm.name)&&x.result)[0]).filter(Boolean);
+  const tAvgK=teamScored.length?Math.round(teamScored.reduce((s,a)=>s+(a.result.kpiScore||a.result.composite),0)/teamScored.length):0;
+  const tAvgB=teamScored.length?Math.round(teamScored.reduce((s,a)=>s+(a.result.behScore||a.result.composite),0)/teamScored.length):0;
+  const sbar=(label,val,avg)=>`<div style="margin:4px 0"><div class="metric" style="padding:0 0 2px"><span class="help">${label}</span><b>${val} <span class="help">team ${avg}</span></b></div>
+    <div style="height:6px;border-radius:5px;background:var(--line,#242b40);position:relative">
+      <div style="height:100%;width:${Math.min(100,val)}%;border-radius:5px;background:${val>=avg?'var(--green)':'var(--amber)'}"></div>
+      <div style="position:absolute;top:-2px;left:${Math.min(100,avg)}%;width:2px;height:10px;background:var(--muted)"></div></div></div>`;
   const rows=mem.map(m=>{const a=ASSESS.filter(x=>x.team_id===id&&x.name.startsWith(m.name)&&x.result&&x.result.band)[0];
     const c=a?bandColorHex[a.result.band]:"#c4bca5";
     const act=`<button class="btn alt sm" style="padding:5px 11px" onclick="assessMember('${id}','${m.id}')">${a?'Re-assess':'Assess'}</button>`;
-    return `<tr><td><span class="dot" style="background:${c}"></span>${m.name}</td><td>${m.emp_id||''}</td>
-      <td>${a?a.result.composite:'—'}</td><td>${a?a.result.band:'not assessed'}</td><td style="text-align:right">${act}</td></tr>`;}).join('');
+    // SCORECARD: tap a coached row to expand KPI vs Behaviour against the team benchmark.
+    const card=a?`<tr class="scorecard" style="display:none"><td colspan="5" style="padding:6px 14px 12px">
+      ${sbar('KPI performance',a.result.kpiScore||a.result.composite,tAvgK)}
+      ${sbar('Sales behaviours',a.result.behScore||a.result.composite,tAvgB)}
+      <div class="help" style="margin-top:4px">Assessed ${new Date(a.created_at).toLocaleDateString()}</div></td></tr>`:'';
+    return `<tr style="cursor:${a?'pointer':'default'}" onclick="const n=this.nextElementSibling;if(n&&n.classList.contains('scorecard'))n.style.display=n.style.display==='none'?'table-row':'none'">
+      <td><span class="dot" style="background:${c}"></span>${m.name}${a?' <span class="help">\u25be</span>':''}</td><td>${m.emp_id||''}</td>
+      <td>${a?a.result.composite:'\u2014'}</td><td>${a?a.result.band:'not assessed'}</td><td style="text-align:right" onclick="event.stopPropagation()">${act}</td></tr>${card}`;}).join('');
+  const {byKey}=analyticsBase();
   document.getElementById('teamModalBody').innerHTML=`<h3>${t.name}</h3>
-    <p class="help" style="margin-top:0">${mem.length} members · source: ${t.source}</p>
+    <p class="help" style="margin-top:0">${mem.length} members \u00b7 ${t.manager?'Team Leader: '+t.manager+' \u00b7 ':''}source: ${t.source}</p>
+    <div style="margin:10px 0 16px">${pieSvg(mixOf(mem,byKey))}</div>
     <div style="overflow:auto"><table><thead><tr><th>Name</th><th>ID</th><th>Score</th><th>Status</th><th></th></tr></thead>
     <tbody>${rows||'<tr><td colspan=5 class=empty>No members</td></tr>'}</tbody></table></div>
     <div class="btnrow" style="margin-top:14px">
@@ -2041,7 +2060,46 @@ function renderAnalytics(){
         return tl.length?completionBar(t.name,doneOf(tl),tl.length,t.manager?'\u00b7 '+t.manager:''):'';
       }).join('');
   }
+  // ===== READINESS INDEX (benchmark number) =====
+  const scored=mem.map(m=>byKey[m.team_id+'|'+m.name]).filter(Boolean);
+  const rIndex=scored.length?Math.round(scored.reduce((s,a)=>s+a.result.composite,0)/scored.length):null;
+  const rCol=rIndex===null?'var(--muted)':rIndex>=78?'var(--green)':rIndex>=55?'var(--amber)':'#ff5a5f';
+  // ===== NEEDS ATTENTION: lagging + never-assessed, one tap into coaching =====
+  const attention=[];
+  mem.forEach(m=>{
+    const a=byKey[m.team_id+'|'+m.name];
+    if(!a)attention.push({m,why:'not assessed',score:null});
+    else if(a.result.band==='Lagging')attention.push({m,why:'lagging \u00b7 '+a.result.composite,score:a.result.composite});
+  });
+  attention.sort((a,b)=>(a.score??-1)-(b.score??-1));
+  const attHtml=attention.slice(0,8).map(x=>{
+    const t=TEAMS.find(tt=>tt.id===x.m.team_id);
+    return `<div class="metric"><span><span class="dot" style="background:${x.score===null?'#39415c':'#ff5a5f'}"></span>${x.m.name}
+      <span class="help">${t?t.name:''} \u00b7 ${x.why}</span></span>
+      <button class="btn alt sm" style="padding:4px 11px" onclick="assessMember('${x.m.team_id}','${x.m.id}')">Coach \u2192</button></div>`;
+  }).join('')||'<p class="help">Everyone is assessed and above the line. Clean floor.</p>';
+  // ===== TEAM LEADERBOARD + weekly coaching cadence =====
+  const teamRows=realTeams(TEAMS).filter(t=>visibleTeamIds().has(t.id)||myAccess().access==='full').map(t=>{
+    const l=mem.filter(m=>m.team_id===t.id);if(!l.length)return null;
+    const sc=l.map(m=>byKey[m.team_id+'|'+m.name]).filter(Boolean);
+    const avg=sc.length?Math.round(sc.reduce((s,a)=>s+a.result.composite,0)/sc.length):null;
+    const last=sc.length?Math.max(...sc.map(a=>new Date(a.created_at).getTime())):null;
+    const days=last?Math.floor((Date.now()-last)/86400000):null;
+    return {t,avg,days,n:l.length,done:sc.length};
+  }).filter(Boolean).sort((a,b)=>(b.avg??-1)-(a.avg??-1));
+  const lbRow=(x,i)=>`<div class="metric"><span><b style="opacity:.55;margin-right:8px">${i+1}</b>${x.t.name}
+      <span class="help">${x.t.manager||''} \u00b7 ${x.done}/${x.n} coached${x.days!==null?' \u00b7 '+x.days+'d ago':''}</span>
+      ${x.days!==null&&x.days>7?'<span class="tag" style="color:#ff5a5f;margin-left:6px">\u26a0 CADENCE</span>':''}</span>
+      <b style="color:${x.avg===null?'var(--muted)':x.avg>=78?'var(--green)':x.avg>=55?'var(--amber)':'#ff5a5f'}">${x.avg??'\u2014'}</b></div>`;
+  const lbHtml=teamRows.slice(0,5).map(lbRow).join('')
+    +(teamRows.length>8?'<div class="help" style="margin:8px 0 4px">Bottom of the table</div>'+teamRows.slice(-3).map((x)=>lbRow(x,teamRows.indexOf(x))).join(''):'');
   host.innerHTML=`
+  <div class="panel" style="display:flex;gap:26px;align-items:center;flex-wrap:wrap">
+    <div style="text-align:center;min-width:140px"><div style="font-family:var(--disp);font-weight:800;font-size:52px;color:${rCol}">${rIndex??'\u2014'}</div>
+      <div class="help" style="letter-spacing:.08em">READINESS INDEX</div></div>
+    <div style="flex:1;min-width:220px"><h2 style="margin-top:0">Needs attention <span class="help" style="font-weight:400">${attention.length} people</span></h2>${attHtml}</div>
+  </div>
+  <div class="panel"><h2>Team leaderboard <span class="help" style="font-weight:400">weekly coaching cadence</span></h2>${lbHtml||'<p class="help">No coached teams yet.</p>'}</div>
   <div class="panel"><h2>Proficiency breakdown</h2>
     <div style="display:flex;align-items:center;flex-wrap:wrap;margin:10px 0 14px">${deptSel}${teamSel}</div>
     ${pieSvg(mixOf(slice,byKey))}</div>
